@@ -6,7 +6,7 @@ Thanks for helping. Windows ISO Updater is one `.cmd` file built from the parts 
 
 Open an issue with the **Bug report** form. The most useful things to include:
 
-- the version (first console line: `Starting Windows ISO Updater v3.x.x ...`)
+- the version (first console line: `Starting Windows ISO Updater v4.x.x ...`)
 - what you did and on which page
 - the last 50–100 lines of `C:\W10U\logs\engine.log` (and `dism.log` for DISM errors)
 

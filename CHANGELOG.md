@@ -1,10 +1,33 @@
 # Changelog
 
-## Unreleased
+## v4.5.0 — 2026-11-01
 
-- Add ESD to WIM, WIM to ESD and Windows Store ESD to WIM conversions on Tools, with conversion / Setup performance guidance. Preserve sources and existing destinations; verify exported edition counts before publishing the result. Store conversions omit media / WinPE / Setup indexes and explain encrypted-image limitations.
-- Add Windows language-pack CAB import and direct Microsoft HTTPS downloads on Windows updates, optional SHA-256 checks, build / architecture validation, persistent queues and removal. Apply packs to selected Windows editions before cumulative updates in both sequential and parallel servicing; reapply the LCU for language resources. Setup, WinPE and WinRE language packs, LXP and Features on Demand are outside this flow.
-- Refresh image metadata and selected edition indexes after servicing, including newly integrated languages. Keep the existing pages, themes and six interface languages. Add regression coverage for conversion failures, Store indexes, CAB validation, download failures and servicing order.
+ESD / WIM conversions and Windows language-pack integration, using the existing Tools and Windows updates pages, themes and six interface languages.
+
+**Upgrading from 4.4:** download `Windows-ISO-updater-GUI_v4.5.0.cmd` and delete the older `.cmd`. Your settings, the `signing` folder and work folder are kept. No tools or Windows components are installed just by updating the app.
+
+### Added — Windows image conversions
+- **Convert Windows ESD Image to WIM Image**, **Convert Windows WIM Image to ESD Image** and **Convert Windows Store ESD Image to WIM Image** on **Tools**. Choose a source and a new destination; all installation editions are exported in source order.
+- **Store ESD mode** skips media, WinPE, Setup and recovery indexes. Installation editions are renumbered from 1; check answer files that select an image by index. Encrypted Store ESDs require prior decryption with a legitimate key. The output is a standalone installation image, not a bootable ISO, and does not automatically replace the unpacked media.
+- **Conversion and Windows installation performance guidance** is shown before conversion. WIM is generally quicker to create, larger and easier to service; ESD takes more CPU time to compress but makes smaller media. Setup speed depends on CPU and storage: WIM usually needs less decompression, while ESD reads fewer bytes. The installed Windows files and their performance are unchanged by the image compression format.
+- **Source and destination protection.** Sources are preserved and existing destinations are refused. Exported edition counts are verified before publishing the output; incomplete temporary images are removed. The log records conversion time, output size and index mapping.
+
+### Added — Windows language packs
+- **Windows language packs** on **Windows updates**: import a full language-pack CAB, or paste a direct Microsoft HTTPS CAB link and download it inside the app. An expected SHA-256 is optional. A Microsoft documentation link explains where packs are available; some releases need licensed Language Pack / Languages and Optional Features media, as there is no universal public CAB feed.
+- **Build and architecture checks** from the CAB manifest against all ticked Windows editions. The app keeps copies and SHA-256 hashes in the work folder, lists queued languages and lets you remove them. Missing or modified queued CABs stop servicing; importing the original pack again repairs a changed cached copy. Direct downloads accept Microsoft CAB hosts and refuse redirects.
+- **Integration before cumulative updates**, in both sequential and parallel edition servicing: servicing stack, language packs, then LCU. A downloaded cumulative update is required and is reapplied even when the image already has that build, so the language resources are updated too. DISM verifies package signatures and applicability; a rejected pack stops the job before media is replaced.
+- **Fresh-media workflow.** Add languages before slipstreaming. Unpack the original ISO again to change them after servicing; choosing a different source ISO clears the queue. Clean up → Everything removes cached language packs.
+- This flow adds Windows display-language CABs to the ticked editions. The default language, Setup / WinPE and WinRE remain unchanged. LXP / Store language apps and Features on Demand (speech, handwriting, OCR, etc.) are outside this flow. Extra languages increase image size and servicing time; normal installed performance is usually unchanged.
+
+### Changed
+- Refresh image metadata and remap selected edition indexes after servicing, including newly integrated languages.
+- Keep the existing navigation, dark / light themes and six interface languages; all new interface text is translated.
+- Update the version label, README, bug-report form and generated single-file app for 4.5.0. The release includes the `.cmd`, its SHA-256 and GitHub source archives.
+
+### Code and validation
+- New `src/28_engine_images.ps1` for conversions, language-pack metadata, downloads and queue validation; the existing servicing engine applies the packs in update order.
+- New `tests/images.tests.ps1`: 37 checks for conversion compression, Store indexes, source preservation, export failures and cleanup, CAB extraction / metadata, hashes, downloads, target validation and SSU → language → LCU order.
+- All **16 automated suites / 615 checks pass** using PowerShell 7 with stand-ins for Windows tools. The build is reproducible and retains ASCII / CRLF encoding. Native DISM / WPF smoke testing on Windows PowerShell 5.1 remains pending.
 
 ## v4.4.0 — 2026-10-31
 

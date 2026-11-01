@@ -10,8 +10,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: First console line when it starts, e.g. "Starting Windows ISO Updater v4.4.0 ..."
-      placeholder: v4.4.0
+      description: First console line when it starts, e.g. "Starting Windows ISO Updater v4.5.0 ..."
+      placeholder: v4.5.0
     validations:
       required: true
   - type: input
@@ -38,6 +38,7 @@ body:
         - 6 Answer file + $OEM$
         - Install check
         - 7 Slipstream + build ISO
+        - Tools / image conversion
         - Options and clean up
         - Run everything
         - During Windows setup (from the ISO)

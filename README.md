@@ -1,6 +1,6 @@
 # Windows ISO Updater
 
-![version](https://img.shields.io/badge/version-4.4.0-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
+![version](https://img.shields.io/badge/version-4.5.0-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
 
 **One file. Double-click. Get a fully updated Windows 10 or Windows 11 ISO with your drivers, your signed NVIDIA mod, your answer file and your `$OEM$` folder baked in.**
 
@@ -49,7 +49,7 @@ Missing tools (`oscdimg`, `makecat`, `Inf2Cat`, `signtool`) are downloaded autom
 
 That's it. The new ISO lands in `C:\W10U\output` (the work folder can be changed under *Options*).
 
-The console line at start shows the version (`Starting Windows ISO Updater v3.5.1 ...`), then the console hides and the window opens.
+The console line at start shows the version (`Starting Windows ISO Updater v4.5.0 ...`), then the console hides and the window opens.
 
 **Updating:** download the new `Windows-ISO-updater-GUI_vX.X.X.cmd`, put it in the same folder and delete the old one (the file name changes with every version). Your settings, the `signing` folder and the work folder (unpacked media, updates, drivers) are kept — the tool picks up where you left off.
 
@@ -417,7 +417,8 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 | Version | Date | Highlights |
 |---|---|---|
-| **4.4.0** | 2026-10-31 | ISO check: an ISO made with the Media Creation Tool is recognised, and the Microsoft signatures of an ISO's setup and boot files are checked when its SHA-256 isn't listed |
+| **4.5.0** | 2026-11-01 | ESD / WIM and Store ESD conversions with performance guidance; Windows language-pack CAB downloads, imports and integration |
+| 4.4.0 | 2026-10-31 | ISO check: an ISO made with the Media Creation Tool is recognised, and the Microsoft signatures of an ISO's setup and boot files are checked when its SHA-256 isn't listed |
 | 4.3.1 | 2026-10-31 | Fix: 4.2.0 and 4.3.0 didn't open on Windows (*"Argument types do not match"*) |
 | 4.3.0 | 2026-10-31 | Page 1 checks that the ISO is an original from Microsoft (SHA-256 against Microsoft's published values) and says what to do when it isn't |
 | 4.2.0 | 2026-10-30 | The interface in Portuguese, Spanish, French, German and Italian (top right, *Language*), switched at once |
