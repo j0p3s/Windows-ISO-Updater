@@ -2,9 +2,17 @@
 
 ## v4.5.0 — 2026-11-01
 
-ESD / WIM conversions and Windows language-pack integration, using the existing Tools and Windows updates pages, themes and six interface languages.
+In-app Windows 10 / 11 downloads through UUP dump, ESD / WIM conversions and Windows language-pack integration, using the existing pages, themes and six interface languages.
 
 **Upgrading from 4.4:** download `Windows-ISO-updater-GUI_v4.5.0.cmd` and delete the older `.cmd`. Your settings, the `signing` folder and work folder are kept. No tools or Windows components are installed just by updating the app.
+
+### Added — in-app Windows downloads with UUP dump
+- **Download Windows inside the app** on Source ISO: choose Windows 10 / 11, x64 / ARM64 / x86 where available, an optional build number and preview / Insider visibility. Load available languages and editions, then select **Download and create ISO**.
+- Request metadata from the public UUP dump API and its download-and-convert ZIP from `uupdump.net`. The community package downloads Windows payloads from Microsoft and runs the upstream UUP converter locally; UUP / ESD / CAB inputs become a regular bootable Windows installation ISO automatically.
+- If the converter returns complete setup media rather than an ISO, create a standard ISO with `oscdimg`, including BIOS / UEFI boot images where available. Incomplete UUP files or a bare WIM / ESD are reported as errors, never renamed into an ISO.
+- Validate package paths before extraction, force automatic ISO creation / exit, propagate download / converter failures, and validate the finished ISO's setup / UEFI files and Windows build / minimum selected revision, architecture, language and edition. Publish the ISO only after validation, with SHA-256 and provenance sidecars. Existing source ISOs and unpacked media are preserved.
+- Keep download packages and intermediate files under `downloads\uup` for retry / diagnosis; Clean up → Everything removes them. The Source ISO page selects the completed ISO, ready for Unpack and analyze. UUP ISOs are assembled locally and do not match Microsoft's published ISO hashes.
+- Document third-party tool downloads, licensing, space / path requirements and service availability. The app does not use unofficial mirrors or bypass UUP dump / Microsoft service blocks.
 
 ### Added — Windows image conversions
 - **Convert Windows ESD Image to WIM Image**, **Convert Windows WIM Image to ESD Image** and **Convert Windows Store ESD Image to WIM Image** on **Tools**. Choose a source and a new destination; all installation editions are exported in source order.
@@ -25,9 +33,10 @@ ESD / WIM conversions and Windows language-pack integration, using the existing 
 - Update the version label, README, bug-report form and generated single-file app for 4.5.0. The release includes the `.cmd`, its SHA-256 and GitHub source archives.
 
 ### Code and validation
+- New `src/27_engine_uup.ps1` for UUP dump discovery, packages, conversion, ISO validation and provenance, plus `tests/uup.tests.ps1` with 38 checks for metadata, package extraction, download / conversion success and failure paths, and ISO validation.
 - New `src/28_engine_images.ps1` for conversions, language-pack metadata, downloads and queue validation; the existing servicing engine applies the packs in update order.
 - New `tests/images.tests.ps1`: 37 checks for conversion compression, Store indexes, source preservation, export failures and cleanup, CAB extraction / metadata, hashes, downloads, target validation and SSU → language → LCU order.
-- All **16 automated suites / 615 checks pass** using PowerShell 7 with stand-ins for Windows tools. The build is reproducible and retains ASCII / CRLF encoding. Native DISM / WPF smoke testing on Windows PowerShell 5.1 remains pending.
+- All **17 automated suites / 653 checks pass** using PowerShell 7 with stand-ins for Windows tools. The build is reproducible and retains ASCII / CRLF encoding. Live UUP requests from the development environment were refused by the service (HTTP 403); no service block was bypassed. Live downloads / conversion and native DISM / WPF smoke testing on Windows PowerShell 5.1 remain pending.
 
 ## v4.4.0 — 2026-10-31
 

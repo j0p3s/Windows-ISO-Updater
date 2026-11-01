@@ -289,7 +289,7 @@ function Complete-Work {
 function Set-Busy([bool]$On) {
     $labels = @{ Unpack = (T 'Unpack'); Analyze = (T 'Analyze'); Download = (T 'Download updates'); ScanHost = (T 'Driver scan'); CommitHost = (T 'Copy drivers')
                  ScanFolder = (T 'Folder scan'); CommitImport = (T 'Import drivers'); Sign = (T 'Re-sign drivers'); Service = (T 'Slipstream'); Build = (T 'Build ISO')
-                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs') }
+                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
     $Script:JobLabel = $labels[$Script:JobName]
     if (-not $Script:JobLabel) { $Script:JobLabel = $Script:JobName }
     $Script:U.Pages.IsEnabled = -not $On

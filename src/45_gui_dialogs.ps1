@@ -31,6 +31,30 @@ $Script:XPages = @'
               </StackPanel>
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Download Windows inside the app (UUP dump)"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing."/>
+              <WrapPanel Margin="0,0,0,10">
+                <RadioButton x:Name="UupX64" Style="{StaticResource Seg}" GroupName="uuparch" Content="x64" IsChecked="True"/>
+                <RadioButton x:Name="UupArm64" Style="{StaticResource Seg}" GroupName="uuparch" Content="ARM64"/>
+                <RadioButton x:Name="UupX86" Style="{StaticResource Seg}" GroupName="uuparch" Content="x86"/>
+                <TextBlock Text="Build number (optional)" VerticalAlignment="Center" Margin="8,0"/>
+                <TextBox x:Name="UupBuildFilter" Width="105"/>
+              </WrapPanel>
+              <CheckBox x:Name="UupPreview" Style="{StaticResource Toggle}" Content="Include preview / Insider builds"/>
+              <WrapPanel Margin="0,8,0,10">
+                <Button x:Name="UupSearch" Style="{StaticResource Btn}" Content="Find Windows builds"/>
+                <Button x:Name="UupOpen" Style="{StaticResource Btn}" Content="Open UUP dump"/>
+              </WrapPanel>
+              <DataGrid x:Name="UupBuildGrid" Height="175" SelectionMode="Single"/>
+              <Button x:Name="UupLanguages" HorizontalAlignment="Left" Style="{StaticResource Btn}" Margin="0,10,0,10" Content="Load languages"/>
+              <DataGrid x:Name="UupLangGrid" Height="130" SelectionMode="Single"/>
+              <Button x:Name="UupEditions" HorizontalAlignment="Left" Style="{StaticResource Btn}" Margin="0,10,0,10" Content="Load editions"/>
+              <DataGrid x:Name="UupEditionGrid" Height="130" SelectionMode="Single"/>
+              <Button x:Name="UupDownload" HorizontalAlignment="Left" Style="{StaticResource Primary}" Margin="0,14,0,10" Content="Download and create ISO"/>
+              <TextBlock Style="{StaticResource Sub}" Text="The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved."/>
+            </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
               <TextBlock Style="{StaticResource H2}" Text="Detected image"/>
               <TextBlock x:Name="ImgInfo" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Text="Nothing unpacked yet."/>
               <TextBlock x:Name="ImgNote" Style="{StaticResource Sub}" Margin="0,4,0,12"/>

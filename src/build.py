@@ -136,7 +136,7 @@ def known_iso_hashes():
 
 engine = '\n\n'.join([
     part('10_engine_head.ps1'),
-    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'), part('28_engine_images.ps1'),
+    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'), part('28_engine_images.ps1'), part('27_engine_uup.ps1'),
     part('29_engine_isocheck.ps1'), known_iso_hashes(),
     drivers_a, drivers_b, '#endregion', unattend, part('35_engine_service.ps1'), part('36_engine_build.ps1'),
     part('30_engine_tools.ps1'), part('31_engine_sign.ps1'), part('39_engine_catalogs.ps1'), part('33_engine_check.ps1'), part('34_engine_check2.ps1'), part('32_engine_jobs.ps1'),

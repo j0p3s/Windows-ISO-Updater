@@ -232,7 +232,7 @@ function Invoke-CleanJob($A) {
     if ($A.All) {
         # start from scratch: everything this tool keeps in the work folder goes, the state starts empty.
         # Only its own names are deleted - anything else in that folder is left alone.
-        $own = @('media', 'updates', 'languages', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
+        $own = @('media', 'updates', 'languages', 'downloads', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
                  'autounattend.original.xml', 'install-check.json', 'defender-exclusion.txt')
         $Script:LogFile = $null
         foreach ($n in $own) {
@@ -303,6 +303,10 @@ function Invoke-Job([string]$Job, $A) {
         Disable-DefenderSkip       # leftover from a run that was killed
         if ($Job -in 'Unpack', 'Download', 'Sign', 'Service', 'Build', 'All') { Enable-DefenderSkip }
         switch ($Job) {
+            'UupSearch'    { $Script:Sync.Result = @(Find-UupBuilds $A.Os $A.Arch $A.Build ([bool]$A.Preview)) }
+            'UupLanguages' { $Script:Sync.Result = @(Get-UupLanguages $A.Id) }
+            'UupEditions'  { $Script:Sync.Result = @(Get-UupEditions $A.Id $A.Language) }
+            'UupDownload'  { $Script:Sync.Result = Invoke-UupDownload $A.Choice }
             'CheckIso'     { $Script:Sync.Result = Test-IsoOriginal ([string]$A.Iso) }
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }

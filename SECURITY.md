@@ -14,7 +14,11 @@ The ISO contains your `autounattend.xml`, which usually holds an account passwor
 
 ## What the tool downloads
 
-Only from Microsoft: the Update Catalog and its download servers (updates are checked against the SHA-1 in their file names), the Microsoft symbol server (`oscdimg.exe`, SHA-256 checked, ADK as fallback) and nuget.org (`Microsoft.Windows.SDK.BuildTools` / `Microsoft.Windows.WDK.x64`, for `signtool` and `Inf2Cat`; only those folders are extracted, nothing is installed). Nothing about you or your PC is sent anywhere.
+Updates and Microsoft deployment / signing tools come from Microsoft's Update Catalog, download / symbol servers and NuGet packages. Language packs can be imported or downloaded from direct Microsoft CAB URLs.
+
+If you choose in-app Windows downloads, the app requests metadata and a download-and-convert package from `api.uupdump.net` / `uupdump.net`. UUP dump is a community project. Its package downloads Windows payloads from Microsoft and runs its upstream downloader / converter tools locally. Package ZIP paths are checked before extraction; the app validates the resulting ISO's boot files and selected Windows image metadata before publishing it, and writes a SHA-256 and provenance file. It does not bundle these third-party tools or bypass service blocks.
+
+The optional generate-cat-file signing engine downloads pinned source from GitHub. The app has no telemetry and does not upload your signing key, drivers, answer files or ISO contents. Download services see the requests you make (including selected UUP build, language and edition).
 
 ## While it runs
 

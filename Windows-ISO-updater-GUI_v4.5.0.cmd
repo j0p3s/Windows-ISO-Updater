@@ -990,6 +990,221 @@ function Add-QueuedLanguagePacks([string]$MountDir) {
 }
 #endregion
 
+#region ---------------------------------------------------------------- UUP dump: Windows downloads and ISO creation
+function New-UupQuery($Values) {
+    return (@(foreach ($k in $Values.Keys) { '{0}={1}' -f [uri]::EscapeDataString([string]$k), [uri]::EscapeDataString([string]$Values[$k]) }) -join '&')
+}
+function Assert-UupId([string]$Id) {
+    if ($Id -notmatch '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$') { throw 'Choose a valid UUP dump build first.' }
+}
+function Invoke-UupApi([string]$Method, $Values) {
+    if ($Method -notin 'listid', 'listlangs', 'listeditions') { throw 'Unsupported UUP dump API request.' }
+    $url = 'https://api.uupdump.net/' + $Method + '.php?' + (New-UupQuery $Values)
+    try { $r = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 60 -ErrorAction Stop }
+    catch { throw "UUP dump could not be reached or refused the request. Try again later or open uupdump.net; no ISO was created. $($_.Exception.Message)" }
+    if (-not $r.response -or $r.response.error) { throw "UUP dump returned an error: $($r.response.error). Try another build or try again later." }
+    return $r.response
+}
+# PHP returns a JSON array when its numeric keys are contiguous, an object when they are not.
+function Get-UupValues($Value) {
+    if ($Value -is [Collections.IDictionary]) { return @($Value.Values) }
+    if ($Value -is [Management.Automation.PSCustomObject]) { return @($Value.PSObject.Properties | ForEach-Object { $_.Value }) }
+    return @($Value)
+}
+function Find-UupBuilds([string]$Os, [string]$Arch, [string]$Build, [bool]$Preview = $false) {
+    if ($Os -notin '10', '11' -or $Arch -notin 'amd64', 'arm64', 'x86') { throw 'Choose Windows 10 or 11 and an architecture.' }
+    if ($Build -and $Build -notmatch '^\d{4,5}(\.\d{1,6})?$') { throw 'Use a build number such as 19045 or 26100.1, or leave it empty.' }
+    $query = "Windows $Os " + $(if ($Build) { "$Build " }) + $Arch
+    Write-Step "UUP dump: $query"
+    $r = Invoke-UupApi 'listid' @{ search = $query; sortByDate = 1 }
+    $items = @(foreach ($b in (Get-UupValues $r.builds)) {
+        if (-not $b -or [string]$b.build -notmatch '^\d{4,5}(\.\d{1,6})?$' -or $b.arch -ne $Arch) { continue }
+        $n = [int](([string]$b.build -split '\.')[0])
+        if (($Os -eq '10' -and ($n -lt 10240 -or $n -ge 22000)) -or ($Os -eq '11' -and $n -lt 22000)) { continue }
+        if ($b.title -match '(?i)server|\.NET|Dynamic Update|Servicing Stack') { continue }
+        if (-not $Preview -and $b.title -match '(?i)preview|insider') { continue }
+        if ($Build -and [string]$b.build -ne $Build -and -not ([string]$b.build).StartsWith($Build + '.')) { continue }
+        if ([string]$b.uuid -notmatch '^[a-fA-F0-9-]{36}$') { continue }
+        Assert-UupId ([string]$b.uuid)
+        [pscustomobject]@{ Id = [string]$b.uuid; Title = [string]$b.title; Build = [string]$b.build; Architecture = (ConvertTo-ArchName $b.arch); Arch = [string]$b.arch; Os = $Os; Created = [long]$b.created }
+    })
+    $items = @($items | Sort-Object Created -Descending | Select-Object -First 80)
+    if (-not $items.Count) { throw 'No matching Windows builds found. Try another build number or include preview builds.' }
+    Write-Ok "$($items.Count) UUP dump build(s) found. Load languages to check which have complete installation packages."
+    return $items
+}
+function Get-UupLanguages([string]$Id) {
+    Assert-UupId $Id
+    $r = Invoke-UupApi 'listlangs' @{ id = $Id }
+    $items = @(foreach ($code in @(Get-UupValues $r.langList)) {
+        if ([string]$code -notmatch '^[a-zA-Z]{2,3}-[a-zA-Z0-9-]{2,12}$') { continue }
+        $name = [string]$r.langFancyNames.$code
+        if (-not $name) { $name = [string]$code }
+        [pscustomobject]@{ Code = ([string]$code).ToLowerInvariant(); Name = $name }
+    })
+    if (-not $items.Count) { throw 'This build has no downloadable language packs / complete installation set. Choose another build.' }
+    return @($items | Sort-Object Name)
+}
+function Get-UupEditions([string]$Id, [string]$Language) {
+    Assert-UupId $Id
+    if ($Language -notmatch '^[a-zA-Z]{2,3}-[a-zA-Z0-9-]{2,12}$') { throw 'Choose a UUP dump language.' }
+    $r = Invoke-UupApi 'listeditions' @{ id = $Id; lang = $Language }
+    $items = @(foreach ($code in @(Get-UupValues $r.editionList)) {
+        if ([string]$code -notmatch '^[a-zA-Z0-9]{1,64}$') { continue }
+        $name = [string]$r.editionFancyNames.$code
+        if (-not $name) { $name = [string]$code }
+        [pscustomobject]@{ Code = [string]$code; Name = $name }
+    })
+    if (-not $items.Count) { throw 'This build and language have no installation editions. Choose another combination.' }
+    return @($items | Sort-Object Name)
+}
+function Save-UupPackage([string]$Id, [string]$Language, [string]$Edition, [string]$Destination) {
+    Assert-UupId $Id
+    $query = New-UupQuery @{ id = $Id; pack = $Language; edition = $Edition; autodl = '2' }
+    Write-Step 'Downloading the UUP dump download-and-convert package'
+    # Query + POST body support the public package endpoint's old and current forms.
+    try { Invoke-WebRequest -Uri ('https://uupdump.net/get.php?' + $query) -Method Post -Body @{ autodl = '2'; updates = '1'; cleanup = '0' } -OutFile $Destination -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop | Out-Null }
+    catch { throw "UUP dump package download failed. Try again later; the source ISO and unpacked media are unchanged. $($_.Exception.Message)" }
+}
+function Expand-UupPackage([string]$Archive, [string]$Destination) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = $null
+    try {
+        $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+        if ($zip.Entries.Count -gt 2000) { throw 'Too many package entries.' }
+        $root = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        $total = 0L
+        foreach ($entry in $zip.Entries) {
+            $total += $entry.Length
+            if ($total -gt 512MB) { throw 'The download package is unexpectedly large.' }
+            $name = $entry.FullName.Replace('\', '/')
+            if ($name -match '(^/|(^|/)\.\.(/|$)|:)' -or $name -match '[\x00-\x1f]' -or (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { throw 'Unsafe path in UUP dump package.' }
+            $target = [IO.Path]::GetFullPath((Join-Path $Destination $name))
+            if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe path in UUP dump package.' }
+        }
+        foreach ($entry in $zip.Entries) {
+            $target = Join-Path $Destination $entry.FullName.Replace('\', '/')
+            if ($entry.FullName.EndsWith('/')) { New-Item -ItemType Directory -Force -Path $target | Out-Null; continue }
+            New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+        }
+    } catch { throw "Cannot use the UUP dump package (it may be an error page instead of a ZIP). $($_.Exception.Message)" }
+    finally { if ($zip) { $zip.Dispose() } }
+}
+function Set-UupConvertConfig([string]$Directory) {
+    $configs = @(Get-ChildItem -LiteralPath $Directory -Filter 'ConvertConfig.ini' -File -Recurse)
+    if (-not $configs.Count) { throw 'The UUP dump package has no ConvertConfig.ini. Download a download-and-convert package.' }
+    foreach ($file in $configs) {
+        $text = [IO.File]::ReadAllText($file.FullName)
+        if ($text -notmatch '(?im)^\[convert-UUP\]\s*$') { throw 'Unsupported UUP converter configuration.' }
+        foreach ($kv in @{ AutoStart = 1; AutoExit = 1; SkipISO = 0; wim2esd = 0; StartVirtual = 0 }.GetEnumerator()) {
+            $pattern = '(?im)^' + [regex]::Escape($kv.Key) + '\s*=.*$'
+            $line = $kv.Key + '=' + $kv.Value
+            if ($text -match $pattern) { $text = [regex]::Replace($text, $pattern, $line) }
+            else { $text = [regex]::Replace($text, '(?im)^\[convert-UUP\]\s*$', ('[convert-UUP]' + "`r`n" + $line)) }
+        }
+        [IO.File]::WriteAllText($file.FullName, $text, [Text.Encoding]::ASCII)
+    }
+}
+function Invoke-UupRunner([string]$Directory) {
+    $entry = $null
+    foreach ($name in 'uup_download_windows.cmd', 'aria2_download_windows.cmd') {
+        $candidate = Join-Path $Directory $name
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $entry = $candidate; break }
+    }
+    if (-not $entry) { throw 'The UUP dump package has no supported Windows download-and-convert script.' }
+    Set-UupConvertConfig $Directory
+    Write-Step 'Downloading Windows files and converting UUP / ESD / CAB files into a bootable ISO'
+    Write-Info 'Running the UUP dump community downloader and UUP converter. Several GB are downloaded from Microsoft. This can take an hour or more.'
+    $code = Invoke-Exe (Join-Path $env:SystemRoot 'System32\cmd.exe') ('/d /s /c "' + (Q $entry) + ' <nul"')
+    if ($code -ne 0) { throw "UUP dump download / conversion failed (exit $code). Files are kept in $Directory for retry and diagnosis." }
+}
+function New-UupIsoFromMedia([string]$Media, [string]$Destination) {
+    $etfs = Join-Path $Media 'boot\etfsboot.com'
+    $efi = Join-Path $Media 'efi\microsoft\boot\efisys.bin'
+    if (-not (Test-Path -LiteralPath $efi)) { throw 'The converter did not produce an ISO or complete bootable setup media. A bare WIM / ESD cannot be renamed into an ISO.' }
+    $osc = Find-Oscdimg
+    if (-not $osc) { $osc = Get-Oscdimg }
+    $boot = if (Test-Path -LiteralPath $etfs) { "-bootdata:2#p0,e,b$(Q $etfs)#pEF,e,b$(Q $efi)" } else { "-bootdata:1#pEF,e,b$(Q $efi)" }
+    Write-Step 'Building a standard bootable ISO from the downloaded setup media'
+    $code = Invoke-Exe $osc ("-m -o -u2 -udfver102 -lWINDOWS_UUP $boot $(Q $Media) $(Q $Destination)") -MergeErr
+    if ($code -ne 0 -or -not (Test-Path -LiteralPath $Destination)) { Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue; throw "UUP setup media ISO build failed (exit $code)." }
+}
+function Test-UupIso([string]$Iso, $Choice) {
+    $disk = Get-DiskImage -ImagePath $Iso -ErrorAction Stop
+    $wasAttached = [bool]$disk.Attached
+    if (-not $wasAttached) { $disk = Mount-DiskImage -ImagePath $Iso -PassThru -ErrorAction Stop }
+    try {
+        $vol = $disk | Get-Volume
+        if (-not $vol.DriveLetter) { throw 'The downloaded ISO could not be mounted with a drive letter.' }
+        $root = "$($vol.DriveLetter):\"
+        $efiName = @{ amd64 = 'bootx64.efi'; arm64 = 'bootaa64.efi'; x86 = 'bootia32.efi' }[[string]$Choice.Arch]
+        foreach ($rel in @('setup.exe', 'sources\boot.wim', "efi\boot\$efiName")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $root $rel) -PathType Leaf)) { throw "The downloaded ISO is missing $rel." }
+        }
+        $image = $null
+        foreach ($name in 'install.wim', 'install.esd') {
+            $f = Join-Path $root "sources\$name"
+            if (Test-Path -LiteralPath $f -PathType Leaf) { $image = $f; break }
+        }
+        if (-not $image) { throw 'The downloaded ISO contains no Windows install.wim / install.esd.' }
+        $images = Get-ImageList $image
+        $parts = [string]$Choice.Build -split '\.'
+        $build = [int]$parts[0]
+        $revision = if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }
+        $matching = @($images | Where-Object { $_.Edition -ieq $Choice.Edition -and $_.Arch -eq (ConvertTo-ArchName $Choice.Arch) -and [int]$_.Build -eq $build -and [int]$_.Revision -ge $revision -and $_.Langs -match ('(?i)(^|[,;\s])' + [regex]::Escape([string]$Choice.Language) + '($|[,;\s])') })
+        if (-not $matching.Count) { throw 'The ISO does not contain the chosen Windows build, architecture, language and edition.' }
+    } finally { if (-not $wasAttached) { Dismount-DiskImage -ImagePath $Iso -ErrorAction SilentlyContinue | Out-Null } }
+}
+function Invoke-UupDownload($Choice) {
+    Assert-UupId ([string]$Choice.Id)
+    if ($Choice.Arch -notin 'amd64', 'arm64', 'x86' -or [string]$Choice.Build -notmatch '^\d{4,5}(\.\d{1,6})?$') { throw 'Choose a valid Windows build and architecture.' }
+    if ([string]$Choice.Edition -notmatch '^[a-zA-Z0-9]{1,64}$' -or [string]$Choice.Language -notmatch '^[a-zA-Z]{2,3}-[a-zA-Z0-9-]{2,12}$') { throw 'Choose a language and edition first.' }
+    if ($Script:P.Work -match '[\s"&|<>^%!()]') { throw 'UUP conversion needs a short work path without spaces or shell characters, such as C:\W10U. Change it on Options first.' }
+    $langs = @(Get-UupLanguages $Choice.Id)
+    if (-not @($langs | Where-Object { $_.Code -ieq $Choice.Language }).Count) { throw 'The selected language is no longer available. Load languages again.' }
+    $editions = @(Get-UupEditions $Choice.Id $Choice.Language)
+    if (-not @($editions | Where-Object { $_.Code -ieq $Choice.Edition }).Count) { throw 'The selected edition is no longer available. Load editions again.' }
+    Test-WorkDir 35
+    $dir = Join-Path (Join-Path $Script:P.Work 'downloads\uup') ("$($Choice.Id)_$($Choice.Language)_$($Choice.Edition)")
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $zip = Join-Path $dir 'download-package.zip'
+    Write-Title "Download Windows from UUP dump - $($Choice.Build) / $($Choice.Language) / $($Choice.Edition)"
+    Save-UupPackage $Choice.Id $Choice.Language $Choice.Edition $zip
+    Expand-UupPackage $zip $dir
+    Invoke-UupRunner $dir
+    $iso = @(Get-ChildItem -LiteralPath $dir -Filter '*.iso' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    if (-not $iso.Count) {
+        $media = @(foreach ($n in 'ISOFOLDER', 'ISO', 'media') {
+            $d = Join-Path $dir $n
+            if ((Test-Path -LiteralPath (Join-Path $d 'sources\boot.wim')) -and ((Test-Path -LiteralPath (Join-Path $d 'sources\install.wim')) -or (Test-Path -LiteralPath (Join-Path $d 'sources\install.esd')))) { $d }
+        })
+        if (-not $media.Count) { throw "No bootable ISO or complete setup media was produced. UUP files are kept in $dir; check the conversion log." }
+        $candidate = Join-Path $dir 'Windows.iso'
+        New-UupIsoFromMedia $media[0] $candidate
+        $iso = @(Get-Item -LiteralPath $candidate)
+    }
+    $source = $iso[0].FullName
+    Test-UupIso $source $Choice
+    New-Item -ItemType Directory -Force -Path $Script:P.Output | Out-Null
+    $os = if ([int](([string]$Choice.Build -split '\.')[0]) -ge 22000) { '11' } else { '10' }
+    $name = 'Win{0}_{1}_{2}_{3}_{4}_{5}.iso' -f $os, $Choice.Build, $Choice.Arch, $Choice.Language, $Choice.Edition, ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $target = Join-Path $Script:P.Output $name
+    $part = "$target.part"
+    try {
+        Copy-Item -LiteralPath $source -Destination $part -ErrorAction Stop
+        $hash = (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash
+        [IO.File]::Move($part, $target)
+    } finally { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+    [IO.File]::WriteAllText("$target.sha256", "$hash *$name`n", (New-Object Text.UTF8Encoding $false))
+    $meta = [ordered]@{ Provider = 'UUP dump'; Id = $Choice.Id; Build = $Choice.Build; Arch = $Choice.Arch; Language = $Choice.Language; Edition = $Choice.Edition; Sha256 = $hash; Iso = $target }
+    $meta | ConvertTo-Json | Set-Content -LiteralPath "$target.uup.json" -Encoding UTF8
+    Write-Ok "Bootable Windows ISO ready: $target"
+    Write-Info 'This ISO was assembled locally from UUP files. It will not match a Microsoft-published ISO hash. Select Unpack and analyze to use it.'
+    return $meta
+}
+#endregion
+
 #region ---------------------------------------------------------------- is the ISO an original from Microsoft? (SHA-256)
 # Microsoft lists the SHA-256 of every ISO on its download pages ("Verify your download"). An ISO is original when
 # its SHA-256 is one of them: the values in Get-KnownIsoHashes (built from src/iso-hashes.json, which keeps the ISOs
@@ -5206,7 +5421,7 @@ function Invoke-CleanJob($A) {
     if ($A.All) {
         # start from scratch: everything this tool keeps in the work folder goes, the state starts empty.
         # Only its own names are deleted - anything else in that folder is left alone.
-        $own = @('media', 'updates', 'languages', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
+        $own = @('media', 'updates', 'languages', 'downloads', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
                  'autounattend.original.xml', 'install-check.json', 'defender-exclusion.txt')
         $Script:LogFile = $null
         foreach ($n in $own) {
@@ -5277,6 +5492,10 @@ function Invoke-Job([string]$Job, $A) {
         Disable-DefenderSkip       # leftover from a run that was killed
         if ($Job -in 'Unpack', 'Download', 'Sign', 'Service', 'Build', 'All') { Enable-DefenderSkip }
         switch ($Job) {
+            'UupSearch'    { $Script:Sync.Result = @(Find-UupBuilds $A.Os $A.Arch $A.Build ([bool]$A.Preview)) }
+            'UupLanguages' { $Script:Sync.Result = @(Get-UupLanguages $A.Id) }
+            'UupEditions'  { $Script:Sync.Result = @(Get-UupEditions $A.Id $A.Language) }
+            'UupDownload'  { $Script:Sync.Result = Invoke-UupDownload $A.Choice }
             'CheckIso'     { $Script:Sync.Result = Test-IsoOriginal ([string]$A.Iso) }
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }
@@ -5777,6 +5996,30 @@ $Script:XPages = @'
                 <TextBlock x:Name="IsoCheckNote" Style="{StaticResource Sub}" Margin="0,4,0,0"/>
                 <TextBox x:Name="IsoHashBox" IsReadOnly="True" FontFamily="Consolas" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="SHA-256 of the ISO - select it to copy"/>
               </StackPanel>
+            </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Download Windows inside the app (UUP dump)"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing."/>
+              <WrapPanel Margin="0,0,0,10">
+                <RadioButton x:Name="UupX64" Style="{StaticResource Seg}" GroupName="uuparch" Content="x64" IsChecked="True"/>
+                <RadioButton x:Name="UupArm64" Style="{StaticResource Seg}" GroupName="uuparch" Content="ARM64"/>
+                <RadioButton x:Name="UupX86" Style="{StaticResource Seg}" GroupName="uuparch" Content="x86"/>
+                <TextBlock Text="Build number (optional)" VerticalAlignment="Center" Margin="8,0"/>
+                <TextBox x:Name="UupBuildFilter" Width="105"/>
+              </WrapPanel>
+              <CheckBox x:Name="UupPreview" Style="{StaticResource Toggle}" Content="Include preview / Insider builds"/>
+              <WrapPanel Margin="0,8,0,10">
+                <Button x:Name="UupSearch" Style="{StaticResource Btn}" Content="Find Windows builds"/>
+                <Button x:Name="UupOpen" Style="{StaticResource Btn}" Content="Open UUP dump"/>
+              </WrapPanel>
+              <DataGrid x:Name="UupBuildGrid" Height="175" SelectionMode="Single"/>
+              <Button x:Name="UupLanguages" HorizontalAlignment="Left" Style="{StaticResource Btn}" Margin="0,10,0,10" Content="Load languages"/>
+              <DataGrid x:Name="UupLangGrid" Height="130" SelectionMode="Single"/>
+              <Button x:Name="UupEditions" HorizontalAlignment="Left" Style="{StaticResource Btn}" Margin="0,10,0,10" Content="Load editions"/>
+              <DataGrid x:Name="UupEditionGrid" Height="130" SelectionMode="Single"/>
+              <Button x:Name="UupDownload" HorizontalAlignment="Left" Style="{StaticResource Primary}" Margin="0,14,0,10" Content="Download and create ISO"/>
+              <TextBlock Style="{StaticResource Sub}" Text="The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved."/>
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>
               <TextBlock Style="{StaticResource H2}" Text="Detected image"/>
@@ -6315,6 +6558,18 @@ Check the ISO	Verificar a ISO
 Re-read image info	Voltar a ler a imagem
 Download Windows 10 from Microsoft	Transferir o Windows 10 da Microsoft
 SHA-256 of the ISO - select it to copy	SHA-256 da ISO - selecione-o para copiar
+Download Windows inside the app (UUP dump)	Descarregar o Windows na aplica&#xE7;&#xE3;o (UUP dump)
+Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically.	Escolha acima Windows 10 ou 11. 1. Procure e selecione uma compila&#xE7;&#xE3;o. 2. Carregue e selecione um idioma e depois uma edi&#xE7;&#xE3;o. 3. Descarregue e crie o ISO. O UUP dump &#xE9; um projeto comunit&#xE1;rio: o seu programa descarrega os ficheiros do Windows da Microsoft e executa o conversor UUP localmente. &#xC9; criado automaticamente um ISO de arranque a partir dos ficheiros UUP / ESD / CAB.
+Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing.	Conte com v&#xE1;rios GB de transfer&#xEA;ncias e pelo menos 35 GB livres em NTFS. Use uma pasta de trabalho curta e sem espa&#xE7;os, como C:\W10U. A convers&#xE3;o pode demorar uma hora ou mais. A disponibilidade depende do UUP dump e da Microsoft; isto n&#xE3;o ativa o Windows nem contorna o licenciamento.
+ARM64	ARM64
+Build number (optional)	N&#xFA;mero de compila&#xE7;&#xE3;o (opcional)
+Include preview / Insider builds	Incluir compila&#xE7;&#xF5;es de pr&#xE9;-visualiza&#xE7;&#xE3;o / Insider
+Find Windows builds	Procurar compila&#xE7;&#xF5;es do Windows
+Open UUP dump	Abrir UUP dump
+Load languages	Carregar idiomas
+Load editions	Carregar edi&#xE7;&#xF5;es
+Download and create ISO	Descarregar e criar ISO
+The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved.	O ISO final e o SHA-256 s&#xE3;o guardados na pasta de sa&#xED;da. O ISO &#xE9; selecionado acima; prima Extrair e analisar para o utilizar. Um ISO UUP criado localmente n&#xE3;o corresponde aos hashes de ISO publicados pela Microsoft. As imagens de origem e os suportes extra&#xED;dos existentes s&#xE3;o preservados.
 Detected image	Imagem detetada
 Nothing unpacked yet.	Ainda nada foi extra&#xED;do.
 Tick the editions to update. With the option below on, unticked editions are left out of the new ISO (smaller and faster).	Marque as edi&#xE7;&#xF5;es a atualizar. Com a op&#xE7;&#xE3;o abaixo ativa, as edi&#xE7;&#xF5;es n&#xE3;o marcadas ficam de fora da nova ISO (mais pequena e mais r&#xE1;pida).
@@ -6568,6 +6823,10 @@ FixText	Corre&#xE7;&#xE3;o
 Arch	Arquitetura
 Older	Antiga
 Unpack an ISO first (page 1).	Extraia primeiro uma ISO (p&#xE1;gina 1).
+Select a Windows build first.	Selecione primeiro uma compila&#xE7;&#xE3;o do Windows.
+Select a build and load its languages first.	Selecione uma compila&#xE7;&#xE3;o e carregue primeiro os seus idiomas.
+Select a build, language and edition before downloading.	Selecione uma compila&#xE7;&#xE3;o, um idioma e uma edi&#xE7;&#xE3;o antes de descarregar.
+Windows ISO ready. Press Unpack and analyze to use it.	ISO do Windows pronto. Prima Extrair e analisar para o utilizar.
 Choose an existing .iso file first.	Escolha primeiro um ficheiro .iso existente.
 The work folder already has unpacked media ({0}). Replace it with a fresh copy of this ISO?	A pasta de trabalho j&#xE1; tem um suporte extra&#xED;do ({0}). Substitu&#xED;-lo por uma c&#xF3;pia nova desta ISO?
 Unpack this ISO anyway?	Extrair esta ISO mesmo assim?
@@ -6632,6 +6891,8 @@ Answer file	Ficheiro de respostas
 No answer file fixes to undo.	N&#xE3;o h&#xE1; corre&#xE7;&#xF5;es do ficheiro de respostas para anular.
 Put the answer file back the way it was before the fixes?	Repor o ficheiro de respostas como estava antes das corre&#xE7;&#xF5;es?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' ainda est&#xE1; a decorrer. Fechar agora pode deixar uma imagem montada (execute a Limpeza da pr&#xF3;xima vez). Fechar mesmo assim?
+Id	ID
+Code	C&#xF3;digo
 '@ }
         'es' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	actualizaciones + controladores + mods NVIDIA firmados + autounattend + $OEM$  ->  ISO de arranque
@@ -6686,6 +6947,18 @@ Check the ISO	Comprobar la ISO
 Re-read image info	Volver a leer la imagen
 Download Windows 10 from Microsoft	Descargar Windows 10 de Microsoft
 SHA-256 of the ISO - select it to copy	SHA-256 de la ISO: selecci&#xF3;nelo para copiarlo
+Download Windows inside the app (UUP dump)	Descargar Windows dentro de la aplicaci&#xF3;n (UUP dump)
+Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically.	Elija Windows 10 u 11 arriba. 1. Busque y seleccione una compilaci&#xF3;n. 2. Cargue y seleccione un idioma y despu&#xE9;s una edici&#xF3;n. 3. Descargue y cree el ISO. UUP dump es un proyecto comunitario: su descargador obtiene los archivos de Windows de Microsoft y ejecuta el conversor UUP localmente. Se crea autom&#xE1;ticamente un ISO arrancable a partir de archivos UUP / ESD / CAB.
+Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing.	Prevea varios GB de descargas y al menos 35 GB libres en NTFS. Use una ruta de trabajo corta y sin espacios, como C:\W10U. La conversi&#xF3;n puede tardar una hora o m&#xE1;s. La disponibilidad depende de UUP dump y Microsoft; esto no activa Windows ni elude las licencias.
+ARM64	ARM64
+Build number (optional)	N&#xFA;mero de compilaci&#xF3;n (opcional)
+Include preview / Insider builds	Incluir compilaciones preliminares / Insider
+Find Windows builds	Buscar compilaciones de Windows
+Open UUP dump	Abrir UUP dump
+Load languages	Cargar idiomas
+Load editions	Cargar ediciones
+Download and create ISO	Descargar y crear ISO
+The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved.	El ISO terminado y su SHA-256 se guardan en la carpeta de salida. Se selecciona arriba; pulse Extraer y analizar para usarlo. Un ISO UUP creado localmente no coincide con los hashes de ISO publicados por Microsoft. Se conservan las im&#xE1;genes de origen y los medios extra&#xED;dos existentes.
 Detected image	Imagen detectada
 Nothing unpacked yet.	Todav&#xED;a no se ha extra&#xED;do nada.
 Tick the editions to update. With the option below on, unticked editions are left out of the new ISO (smaller and faster).	Marque las ediciones que quiere actualizar. Con la opci&#xF3;n de abajo activada, las ediciones sin marcar se quedan fuera de la nueva ISO (m&#xE1;s peque&#xF1;a y m&#xE1;s r&#xE1;pida).
@@ -6939,6 +7212,10 @@ FixText	Correcci&#xF3;n
 Arch	Arquitectura
 Older	Antigua
 Unpack an ISO first (page 1).	Extraiga primero una ISO (p&#xE1;gina 1).
+Select a Windows build first.	Seleccione primero una compilaci&#xF3;n de Windows.
+Select a build and load its languages first.	Seleccione una compilaci&#xF3;n y cargue primero sus idiomas.
+Select a build, language and edition before downloading.	Seleccione una compilaci&#xF3;n, un idioma y una edici&#xF3;n antes de descargar.
+Windows ISO ready. Press Unpack and analyze to use it.	ISO de Windows listo. Pulse Extraer y analizar para usarlo.
 Choose an existing .iso file first.	Elija primero un archivo .iso existente.
 The work folder already has unpacked media ({0}). Replace it with a fresh copy of this ISO?	La carpeta de trabajo ya tiene un medio extra&#xED;do ({0}). &#xBF;Reemplazarlo por una copia nueva de esta ISO?
 Unpack this ISO anyway?	&#xBF;Extraer esta ISO de todos modos?
@@ -7003,6 +7280,8 @@ Answer file	Archivo de respuesta
 No answer file fixes to undo.	No hay correcciones del archivo de respuesta que deshacer.
 Put the answer file back the way it was before the fixes?	&#xBF;Devolver el archivo de respuesta a como estaba antes de las correcciones?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' todav&#xED;a se est&#xE1; ejecutando. Cerrar ahora puede dejar una imagen montada (ejecute la Limpieza la pr&#xF3;xima vez). &#xBF;Cerrar de todos modos?
+Id	ID
+Code	C&#xF3;digo
 '@ }
         'fr' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	mises &#xE0; jour + pilotes + mods NVIDIA sign&#xE9;s + autounattend + $OEM$  ->  ISO amor&#xE7;able
@@ -7057,6 +7336,18 @@ Check the ISO	V&#xE9;rifier l'ISO
 Re-read image info	Relire l'image
 Download Windows 10 from Microsoft	T&#xE9;l&#xE9;charger Windows 10 chez Microsoft
 SHA-256 of the ISO - select it to copy	SHA-256 de l'ISO - s&#xE9;lectionnez-le pour le copier
+Download Windows inside the app (UUP dump)	T&#xE9;l&#xE9;charger Windows dans l&#x2019;application (UUP dump)
+Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically.	Choisissez Windows 10 ou 11 ci-dessus. 1. Recherchez et s&#xE9;lectionnez une build. 2. Chargez et s&#xE9;lectionnez une langue, puis une &#xE9;dition. 3. T&#xE9;l&#xE9;chargez et cr&#xE9;ez l&#x2019;ISO. UUP dump est un projet communautaire : son outil t&#xE9;l&#xE9;charge les fichiers Windows de Microsoft et ex&#xE9;cute le convertisseur UUP localement. Un ISO amor&#xE7;able est cr&#xE9;&#xE9; automatiquement &#xE0; partir des fichiers UUP / ESD / CAB.
+Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing.	Pr&#xE9;voyez plusieurs Go de t&#xE9;l&#xE9;chargements et au moins 35 Go libres en NTFS. Utilisez un chemin de travail court sans espaces, comme C:\W10U. La conversion peut durer une heure ou plus. La disponibilit&#xE9; d&#xE9;pend d&#x2019;UUP dump et de Microsoft ; cet outil n&#x2019;active pas Windows et ne contourne pas les licences.
+ARM64	ARM64
+Build number (optional)	Num&#xE9;ro de build (facultatif)
+Include preview / Insider builds	Inclure les builds pr&#xE9;liminaires / Insider
+Find Windows builds	Rechercher des builds Windows
+Open UUP dump	Ouvrir UUP dump
+Load languages	Charger les langues
+Load editions	Charger les &#xE9;ditions
+Download and create ISO	T&#xE9;l&#xE9;charger et cr&#xE9;er l&#x2019;ISO
+The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved.	L&#x2019;ISO termin&#xE9; et son SHA-256 sont plac&#xE9;s dans le dossier de sortie. Il est s&#xE9;lectionn&#xE9; ci-dessus ; cliquez sur Extraire et analyser pour l&#x2019;utiliser. Un ISO UUP cr&#xE9;&#xE9; localement ne correspond pas aux hachages d&#x2019;ISO publi&#xE9;s par Microsoft. Les images sources et les supports extraits existants sont pr&#xE9;serv&#xE9;s.
 Detected image	Image d&#xE9;tect&#xE9;e
 Nothing unpacked yet.	Rien n'a encore &#xE9;t&#xE9; extrait.
 Tick the editions to update. With the option below on, unticked editions are left out of the new ISO (smaller and faster).	Cochez les &#xE9;ditions &#xE0; mettre &#xE0; jour. Avec l'option ci-dessous activ&#xE9;e, les &#xE9;ditions non coch&#xE9;es sont exclues de la nouvelle ISO (plus petite et plus rapide).
@@ -7310,6 +7601,10 @@ FixText	Correction
 Arch	Architecture
 Older	Ancienne
 Unpack an ISO first (page 1).	Extrayez d'abord une ISO (page 1).
+Select a Windows build first.	S&#xE9;lectionnez d&#x2019;abord une build Windows.
+Select a build and load its languages first.	S&#xE9;lectionnez une build et chargez d&#x2019;abord ses langues.
+Select a build, language and edition before downloading.	S&#xE9;lectionnez une build, une langue et une &#xE9;dition avant de t&#xE9;l&#xE9;charger.
+Windows ISO ready. Press Unpack and analyze to use it.	ISO Windows pr&#xEA;t. Cliquez sur Extraire et analyser pour l&#x2019;utiliser.
 Choose an existing .iso file first.	Choisissez d'abord un fichier .iso existant.
 The work folder already has unpacked media ({0}). Replace it with a fresh copy of this ISO?	Le dossier de travail contient d&#xE9;j&#xE0; un support extrait ({0}). Le remplacer par une nouvelle copie de cette ISO ?
 Unpack this ISO anyway?	Extraire quand m&#xEA;me cette ISO ?
@@ -7374,6 +7669,8 @@ Answer file	Fichier de r&#xE9;ponses
 No answer file fixes to undo.	Aucune correction du fichier de r&#xE9;ponses &#xE0; annuler.
 Put the answer file back the way it was before the fixes?	Remettre le fichier de r&#xE9;ponses tel qu'il &#xE9;tait avant les corrections ?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' est encore en cours. Fermer maintenant peut laisser une image mont&#xE9;e (lancez le Nettoyage la prochaine fois). Fermer quand m&#xEA;me ?
+Id	ID
+Code	Code
 '@ }
         'de' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	Updates + Treiber + signierte NVIDIA-Mods + autounattend + $OEM$  ->  bootf&#xE4;hige ISO
@@ -7428,6 +7725,18 @@ Check the ISO	ISO pr&#xFC;fen
 Re-read image info	Abbild neu einlesen
 Download Windows 10 from Microsoft	Windows 10 bei Microsoft herunterladen
 SHA-256 of the ISO - select it to copy	SHA-256 der ISO - zum Kopieren markieren
+Download Windows inside the app (UUP dump)	Windows in der Anwendung herunterladen (UUP dump)
+Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically.	W&#xE4;hlen Sie oben Windows 10 oder 11. 1. Build suchen und ausw&#xE4;hlen. 2. Sprache und dann Edition laden und ausw&#xE4;hlen. 3. Herunterladen und ISO erstellen. UUP dump ist ein Gemeinschaftsprojekt: Der Downloader l&#xE4;dt Windows-Dateien von Microsoft und f&#xFC;hrt den UUP-Konverter lokal aus. Aus UUP- / ESD- / CAB-Dateien wird automatisch ein startf&#xE4;higes ISO erstellt.
+Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing.	Rechnen Sie mit mehreren GB Downloads und mindestens 35 GB freiem NTFS-Speicher. Nutzen Sie einen kurzen Arbeitspfad ohne Leerzeichen, etwa C:\W10U. Die Konvertierung kann eine Stunde oder l&#xE4;nger dauern. Die Verf&#xFC;gbarkeit h&#xE4;ngt von UUP dump und Microsoft ab; Windows wird dadurch weder aktiviert noch dessen Lizenzierung umgangen.
+ARM64	ARM64
+Build number (optional)	Buildnummer (optional)
+Include preview / Insider builds	Vorabversionen / Insider-Builds einschlie&#xDF;en
+Find Windows builds	Windows-Builds suchen
+Open UUP dump	UUP dump &#xF6;ffnen
+Load languages	Sprachen laden
+Load editions	Editionen laden
+Download and create ISO	Herunterladen und ISO erstellen
+The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved.	Das fertige ISO und sein SHA-256 werden im Ausgabeordner gespeichert. Es wird oben ausgew&#xE4;hlt; klicken Sie zum Verwenden auf Entpacken und analysieren. Ein lokal erstelltes UUP-ISO stimmt nicht mit den von Microsoft ver&#xF6;ffentlichten ISO-Hashes &#xFC;berein. Vorhandene Quellabbilder und entpackte Medien bleiben erhalten.
 Detected image	Erkanntes Abbild
 Nothing unpacked yet.	Noch nichts entpackt.
 Tick the editions to update. With the option below on, unticked editions are left out of the new ISO (smaller and faster).	Haken Sie die Editionen an, die aktualisiert werden sollen. Mit der Option unten bleiben nicht angehakte Editionen aus der neuen ISO drau&#xDF;en (kleiner und schneller).
@@ -7681,6 +7990,10 @@ FixText	Korrektur
 Arch	Architektur
 Older	&#xC4;lter
 Unpack an ISO first (page 1).	Entpacken Sie zuerst eine ISO (Seite 1).
+Select a Windows build first.	W&#xE4;hlen Sie zuerst einen Windows-Build.
+Select a build and load its languages first.	W&#xE4;hlen Sie einen Build und laden Sie zuerst dessen Sprachen.
+Select a build, language and edition before downloading.	W&#xE4;hlen Sie vor dem Herunterladen einen Build, eine Sprache und eine Edition.
+Windows ISO ready. Press Unpack and analyze to use it.	Windows-ISO bereit. Klicken Sie zum Verwenden auf Entpacken und analysieren.
 Choose an existing .iso file first.	W&#xE4;hlen Sie zuerst eine vorhandene .iso-Datei.
 The work folder already has unpacked media ({0}). Replace it with a fresh copy of this ISO?	Der Arbeitsordner enth&#xE4;lt bereits ein entpacktes Medium ({0}). Durch eine frische Kopie dieser ISO ersetzen?
 Unpack this ISO anyway?	Diese ISO trotzdem entpacken?
@@ -7745,6 +8058,8 @@ Answer file	Antwortdatei
 No answer file fixes to undo.	Keine Korrekturen der Antwortdatei zum R&#xFC;ckg&#xE4;ngigmachen.
 Put the answer file back the way it was before the fixes?	Die Antwortdatei wieder so herstellen, wie sie vor den Korrekturen war?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' l&#xE4;uft noch. Wenn Sie jetzt schlie&#xDF;en, kann ein eingebundenes Abbild zur&#xFC;ckbleiben (beim n&#xE4;chsten Mal Bereinigen ausf&#xFC;hren). Trotzdem schlie&#xDF;en?
+Id	ID
+Code	Code
 '@ }
         'it' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	aggiornamenti + driver + mod NVIDIA firmati + autounattend + $OEM$  ->  ISO avviabile
@@ -7799,6 +8114,18 @@ Check the ISO	Verifica la ISO
 Re-read image info	Rileggi l'immagine
 Download Windows 10 from Microsoft	Scarica Windows 10 da Microsoft
 SHA-256 of the ISO - select it to copy	SHA-256 della ISO - selezionalo per copiarlo
+Download Windows inside the app (UUP dump)	Scarica Windows nell&#x2019;applicazione (UUP dump)
+Choose Windows 10 or 11 above. 1. Find a build and select it. 2. Load and select a language, then an edition. 3. Download and create ISO. UUP dump is a community project: its downloader gets Windows files from Microsoft and runs the UUP converter locally. A bootable ISO is created from UUP / ESD / CAB files automatically.	Scegliere Windows 10 o 11 sopra. 1. Cercare e selezionare una build. 2. Caricare e selezionare una lingua, poi un&#x2019;edizione. 3. Scaricare e creare l&#x2019;ISO. UUP dump &#xE8; un progetto della comunit&#xE0;: lo strumento scarica i file Windows da Microsoft ed esegue il convertitore UUP localmente. Viene creato automaticamente un ISO avviabile dai file UUP / ESD / CAB.
+Allow several GB of downloads and at least 35 GB of free NTFS space. Use a short work path without spaces, such as C:\W10U. Conversion may take an hour or more. Availability depends on UUP dump and Microsoft; this does not activate Windows or bypass licensing.	Prevedere diversi GB di download e almeno 35 GB liberi su NTFS. Usare un percorso di lavoro breve senza spazi, come C:\W10U. La conversione pu&#xF2; richiedere un&#x2019;ora o pi&#xF9;. La disponibilit&#xE0; dipende da UUP dump e Microsoft; questo non attiva Windows n&#xE9; aggira le licenze.
+ARM64	ARM64
+Build number (optional)	Numero build (facoltativo)
+Include preview / Insider builds	Includi build di anteprima / Insider
+Find Windows builds	Cerca build di Windows
+Open UUP dump	Apri UUP dump
+Load languages	Carica lingue
+Load editions	Carica edizioni
+Download and create ISO	Scarica e crea ISO
+The finished ISO and SHA-256 go to the output folder. It is selected above; press Unpack and analyze to use it. A locally assembled UUP ISO will not match Microsoft's published ISO hashes. Existing source images and unpacked media are preserved.	L&#x2019;ISO completato e il suo SHA-256 vengono salvati nella cartella di output. Viene selezionato sopra; premere Estrai e analizza per usarlo. Un ISO UUP creato localmente non corrisponde agli hash ISO pubblicati da Microsoft. Le immagini di origine e i supporti estratti esistenti vengono preservati.
 Detected image	Immagine rilevata
 Nothing unpacked yet.	Ancora niente estratto.
 Tick the editions to update. With the option below on, unticked editions are left out of the new ISO (smaller and faster).	Spunta le edizioni da aggiornare. Con l'opzione qui sotto attiva, le edizioni non spuntate restano fuori dalla nuova ISO (pi&#xF9; piccola e pi&#xF9; veloce).
@@ -8052,6 +8379,10 @@ FixText	Correzione
 Arch	Architettura
 Older	Pi&#xF9; vecchio
 Unpack an ISO first (page 1).	Estrai prima una ISO (pagina 1).
+Select a Windows build first.	Selezionare prima una build di Windows.
+Select a build and load its languages first.	Selezionare una build e caricare prima le sue lingue.
+Select a build, language and edition before downloading.	Selezionare una build, una lingua e un&#x2019;edizione prima di scaricare.
+Windows ISO ready. Press Unpack and analyze to use it.	ISO Windows pronto. Premere Estrai e analizza per usarlo.
 Choose an existing .iso file first.	Scegli prima un file .iso esistente.
 The work folder already has unpacked media ({0}). Replace it with a fresh copy of this ISO?	La cartella di lavoro contiene gi&#xE0; un supporto estratto ({0}). Sostituirlo con una nuova copia di questa ISO?
 Unpack this ISO anyway?	Estrarre comunque questa ISO?
@@ -8116,6 +8447,8 @@ Answer file	File di risposta
 No answer file fixes to undo.	Nessuna correzione del file di risposta da annullare.
 Put the answer file back the way it was before the fixes?	Riportare il file di risposta com'era prima delle correzioni?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' &#xE8; ancora in corso. Chiudere ora pu&#xF2; lasciare un'immagine montata (esegui la Pulizia la prossima volta). Chiudere comunque?
+Id	ID
+Code	Codice
 '@ }
     }
     return ''
@@ -8411,7 +8744,7 @@ function Complete-Work {
 function Set-Busy([bool]$On) {
     $labels = @{ Unpack = (T 'Unpack'); Analyze = (T 'Analyze'); Download = (T 'Download updates'); ScanHost = (T 'Driver scan'); CommitHost = (T 'Copy drivers')
                  ScanFolder = (T 'Folder scan'); CommitImport = (T 'Import drivers'); Sign = (T 'Re-sign drivers'); Service = (T 'Slipstream'); Build = (T 'Build ISO')
-                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs') }
+                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
     $Script:JobLabel = $labels[$Script:JobName]
     if (-not $Script:JobLabel) { $Script:JobLabel = $Script:JobName }
     $Script:U.Pages.IsEnabled = -not $On
@@ -8842,6 +9175,39 @@ function Complete-IsoCheck {
     }
     & $then
 }
+function Invoke-UupSearchClick {
+    $U = $Script:U
+    $arch = if ($U.UupArm64.IsChecked) { 'arm64' } elseif ($U.UupX86.IsChecked) { 'x86' } else { 'amd64' }
+    $U.UupBuildGrid.ItemsSource = $null; $U.UupLangGrid.ItemsSource = $null; $U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupSearch' @{ Os = [string]$Script:Cfg.WinVersion; Arch = $arch; Build = $U.UupBuildFilter.Text.Trim(); Preview = [bool]$U.UupPreview.IsChecked } {
+        $Script:U.UupBuildGrid.ItemsSource = (New-Table @('Title', 'Build', 'Architecture', 'Id', 'Arch') @(foreach ($b in @($Script:Sync.Result)) { , @($b.Title, $b.Build, $b.Architecture, $b.Id, $b.Arch) })).DefaultView
+    }
+}
+function Invoke-UupLanguagesClick {
+    $row = $Script:U.UupBuildGrid.SelectedItem
+    if (-not $row) { Show-Msg (T 'Select a Windows build first.') 'Warning'; return }
+    $Script:U.UupLangGrid.ItemsSource = $null; $Script:U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupLanguages' @{ Id = [string]$row['Id'] } {
+        $Script:U.UupLangGrid.ItemsSource = (New-Table @('Name', 'Code') @(foreach ($v in @($Script:Sync.Result)) { , @($v.Name, $v.Code) })).DefaultView
+    }
+}
+function Invoke-UupEditionsClick {
+    $build = $Script:U.UupBuildGrid.SelectedItem; $lang = $Script:U.UupLangGrid.SelectedItem
+    if (-not $build -or -not $lang) { Show-Msg (T 'Select a build and load its languages first.') 'Warning'; return }
+    $Script:U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupEditions' @{ Id = [string]$build['Id']; Language = [string]$lang['Code'] } {
+        $Script:U.UupEditionGrid.ItemsSource = (New-Table @('Name', 'Code') @(foreach ($v in @($Script:Sync.Result)) { , @($v.Name, $v.Code) })).DefaultView
+    }
+}
+function Invoke-UupDownloadClick {
+    $build = $Script:U.UupBuildGrid.SelectedItem; $lang = $Script:U.UupLangGrid.SelectedItem; $edition = $Script:U.UupEditionGrid.SelectedItem
+    if (-not $build -or -not $lang -or -not $edition) { Show-Msg (T 'Select a build, language and edition before downloading.') 'Warning'; return }
+    $choice = @{ Id = [string]$build['Id']; Build = [string]$build['Build']; Arch = [string]$build['Arch']; Language = [string]$lang['Code']; Edition = [string]$edition['Code'] }
+    Start-Work 'UupDownload' @{ Choice = $choice } {
+        $Script:U.IsoBox.Text = [string]$Script:Sync.Result.Iso
+        Write-Ok (T 'Windows ISO ready. Press Unpack and analyze to use it.')
+    }
+}
 function Invoke-IsoCheckClick {
     $iso = $Script:U.IsoBox.Text.Trim().Trim('"')
     if (-not $iso -or -not (Test-Path -LiteralPath $iso -PathType Leaf)) { Show-Msg (T 'Choose an existing .iso file first.') 'Warning'; return }
@@ -9078,6 +9444,14 @@ try {
         $f = Select-File ((T 'Select a Windows {0} ISO') -f $(if ($Script:Cfg.WinVersion -eq '11') { '11' } else { '10' })) ((T 'ISO images') + ' (*.iso)|*.iso') $start
         if ($f) { $Script:U.IsoBox.Text = $f }
     })
+    $U.UupSearch.Add_Click({ Invoke-UupSearchClick })
+    $U.UupLanguages.Add_Click({ Invoke-UupLanguagesClick })
+    $U.UupEditions.Add_Click({ Invoke-UupEditionsClick })
+    $U.UupDownload.Add_Click({ Invoke-UupDownloadClick })
+    $U.UupOpen.Add_Click({ Start-Process 'https://uupdump.net/' })
+    $U.UupBuildGrid.Add_AutoGeneratingColumn({ param($s, $e) if ($e.PropertyName -in 'Id', 'Arch') { $e.Cancel = $true } })
+    $U.UupBuildGrid.Add_SelectionChanged({ $Script:U.UupLangGrid.ItemsSource = $null; $Script:U.UupEditionGrid.ItemsSource = $null })
+    $U.UupLangGrid.Add_SelectionChanged({ $Script:U.UupEditionGrid.ItemsSource = $null })
     $U.UnpackBtn.Add_Click({ Invoke-UnpackClick })
     $U.IsoCheckBtn.Add_Click({ Invoke-IsoCheckClick })
     $U.IsoBox.Add_TextChanged({ if (-not $Script:Loading) { Update-IsoCheck } })

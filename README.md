@@ -6,7 +6,7 @@
 
 `Windows-ISO-updater-GUI_vX.X.X.cmd` (the version is part of the file name) is a single-file tool with a dark or light graphical interface in **English, Portuguese, Spanish, French, German or Italian** that:
 
-1. **Unpacks a Windows 10 or Windows 11 ISO** (pick the version on page 1) and detects its build, editions, language and architecture — after checking that it is an **original ISO from Microsoft** (SHA-256)
+1. **Downloads Windows 10 or 11 through UUP dump, or unpacks your own ISO** (pick the version on page 1) and detects its build, editions, language and architecture — after checking that it is an **original ISO from Microsoft** (SHA-256)
 2. **Downloads every update it needs** from the Microsoft Update Catalog (cumulative update, servicing stack, Safe OS and Setup Dynamic Updates, .NET)
 3. **Slipstreams drivers** from this PC or from a `Drivers-Backup` folder (storage and network drivers also go into `boot.wim` and WinRE)
 4. **Re-signs modded drivers** (NVCleanstall hardware-ID mods, edited INF files) with your own certificate and installs them during setup
@@ -61,7 +61,7 @@ The console line at start shows the version (`Starting Windows ISO Updater v4.5.
 
 | # | Page | What it does |
 |---|------|--------------|
-| 1 | **Source ISO** | Windows 10 or Windows 11 (the choice follows the ISO you unpack), the download link for it, the [ISO check](#original-iso-check) that tells whether the ISO is an original from Microsoft (SHA-256, or the Microsoft signatures of its setup and boot files for one made with the Media Creation Tool), and unpacking the ISO into the work folder with its build, editions, language and architecture |
+| 1 | **Source ISO** | Download Windows 10 / 11 inside the app through UUP dump (build, architecture, language, edition; automatic bootable ISO creation), or choose your own ISO. Windows 10 or Windows 11 (the choice follows the ISO you unpack), the download link for it, the [ISO check](#original-iso-check) that tells whether the ISO is an original from Microsoft (SHA-256, or the Microsoft signatures of its setup and boot files for one made with the Media Creation Tool), and unpacking the ISO into the work folder with its build, editions, language and architecture |
 | 2 | **Editions** | Tick the editions to update. Unticked ones can be left out, which makes the ISO smaller and the build faster |
 | 3 | **Windows updates** | Finds and downloads the newest LCU, SSU, Safe OS DU, Setup DU, .NET 4.8.1 and .NET CU (SHA-1 checked). Optional .NET 3.5 and `/ResetBase`; import or download matching Windows language-pack CABs |
 | 4 | **Drivers** | *Add drivers from this PC* (`Export-WindowsDriver`) or *Import a drivers folder* (for example `Drivers-Backup` made by `Drivers.cmd`). All subfolders are scanned, and drivers for the wrong architecture are left out. Older versions of a driver that is there in a newer version too (Windows keeps them in its driver store) are unticked: column *Older* |
@@ -75,6 +75,23 @@ The console line at start shows the version (`Starting Windows ISO Updater v4.5.
 The **Activity** panel at the bottom shows the live log, a progress bar and what the current job is doing. **Run everything** (left) runs unpack → updates → slipstream → ISO with what you set on each page.
 
 While a job runs, Windows doesn't go to sleep (the screen can still turn off). The taskbar button shows the progress too. If the window is in the background when a job ends or asks a question, the button flashes. It turns red after an error and yellow while a question is waiting.
+
+### Download Windows 10 / 11 inside the app
+
+On **Source ISO**, choose **Windows 10** or **Windows 11**, then use **Download Windows inside the app (UUP dump)**:
+
+1. Select **x64**, **ARM64** or **x86** (Windows 10 only where available). Optionally enter a build number, such as `19045` or `26100.1`. Press **Find Windows builds** and select a result. Preview / Insider builds are excluded unless you tick their option.
+2. Press **Load languages**, select one, then **Load editions** and select an edition. Builds that have no complete installation set report that before downloading.
+3. Press **Download and create ISO**. The app retrieves the official UUP dump download-and-convert ZIP and runs its Windows downloader and UUP converter locally. Windows payloads come from Microsoft; UUP / ESD / CAB downloads are converted automatically into a regular bootable Windows installation ISO.
+4. The finished ISO is selected in **ISO file**. Press **Unpack and analyze** to use it with updates, language packs and drivers.
+
+If conversion already produces an ISO, it is used directly. If it produces a complete Windows setup folder, the app uses `oscdimg` to create a BIOS + UEFI ISO (UEFI only when no BIOS boot image is present). A bare WIM / ESD or incomplete UUP download cannot be made bootable by changing its file extension: the job reports an error if complete setup media is missing.
+
+Allow several GB of download traffic and **at least 35 GB free on a local NTFS drive**. Use a short work path without spaces or command-shell characters, such as `C:\W10U`; UUP conversion can take an hour or more. Availability depends on [UUP dump](https://uupdump.net/), its API and Microsoft's servers. An API block, expired / unavailable build or conversion failure is reported in Activity; the app does not use unofficial mirrors or bypass service blocks. Use **Open UUP dump** to check service availability.
+
+The app checks the ISO's setup / UEFI files and Windows image build / minimum selected revision, architecture, language and edition before copying it into the output folder. It also writes `.iso.sha256` and `.iso.uup.json` files. Existing source ISOs and unpacked media are preserved. Download packages, tools and intermediate files stay under `downloads\uup` in the work folder for retry and diagnosis; **Clean up → Everything** removes them.
+
+A locally assembled UUP ISO will have a different SHA-256 from Microsoft's published download ISOs. The existing ISO check still applies when you unpack it. This feature does not activate Windows or change licensing or Windows 11 hardware requirements. It downloads third-party UUP dump / converter tools on demand; their notices and license files remain in the package, and these tools are not bundled into this repository.
 
 ### Image conversions
 
@@ -315,7 +332,7 @@ Any other image can still get drivers, signed packages, an answer file and `$OEM
 
 ## Privacy: what stays on your PC
 
-The tool talks only to Microsoft (Update Catalog, download servers, the ISO download pages for the [ISO check](#original-iso-check), symbol server, nuget.org for the signing tools). Only if you choose the generate-cat-file signing engine, it also downloads that tool's source code from github.com. It sends nothing about you or your PC anywhere.
+The app uses Microsoft services for updates, signing tools and the [ISO check](#original-iso-check). When you choose UUP downloads, it sends the selected build, architecture, language and edition to `api.uupdump.net` / `uupdump.net`; the downloaded UUP dump package retrieves Windows payloads from Microsoft and its own tools from the upstream locations it specifies. The optional generate-cat-file engine downloads source from GitHub. The app does not upload your drivers, answer files, signing keys or ISO contents and has no telemetry.
 
 What is private — **never share or upload it:**
 
@@ -337,7 +354,9 @@ The repository's [`.gitignore`](.gitignore) excludes all of that, so a fork or p
 | `~/.w10u-gencat` in your WSL distribution | generate-cat-file built there, only with that engine — remove it with `rm -rf ~/.w10u-gencat` |
 | `signing\` (next to the .cmd) | `DriverSigning.pfx` (**private**) + `DriverSigning.cer` |
 | `Windows-ISO-Updater.settings.json` | Your options (the same file for every version; `Win10-ISO-Updater.settings.json` from 3.3 and older is read once) |
-| `C:\W10U\` (work folder) | Unpacked media, updates, drivers, signed copies, logs, `state.json` (also the check of the last ISO), output ISO — all removed by *Clean up → Everything* |
+| `C:\W10U\` (work folder) | Unpacked media, updates, language packs, drivers, UUP downloads / converter tools, signed copies, logs, `state.json` (also the check of the last ISO), output ISO — all removed by *Clean up → Everything* |
+| `C:\W10U\downloads\uup\` | UUP dump package, Microsoft payloads and intermediate conversion files for each build / language / edition |
+| `C:\W10U\output\*.iso.uup.json` | Download provenance: UUP update ID, build, architecture, language, edition and ISO SHA-256 |
 
 Logs: `C:\W10U\logs\engine.log` and `dism.log` (`dism-boot.log` for boot.wim when it runs in the background). During install, the driver script writes `C:\Windows\Temp\SetupComplete-drivers.log`.
 
@@ -347,6 +366,8 @@ Logs: `C:\W10U\logs\engine.log` and `dism.log` (`dism-boot.log` for boot.wim whe
 
 | Problem | Fix |
 |---------|-----|
+| UUP dump API / package download fails | Check the Activity error and service availability with **Open UUP dump**. Retry later or select another build. The app does not work around service blocks |
+| UUP files download but no ISO is produced | Check the converter log, use a short work path such as `C:\W10U`, allow 35 GB free and choose a build with languages and editions available. A bare ESD / WIM needs complete setup media to become a bootable ISO |
 | Page 1 says **Not verified** for an ISO from Microsoft | Without internet, press **Check the ISO** again when online (a new ISO is only on microsoft.com). A Visual Studio subscription / Volume Licensing ISO: compare the SHA-256 with the one on that portal. An older ISO Microsoft no longer offers may be missing from the list. Otherwise download the ISO again from Microsoft (button on page 1) |
 | Page 1 says **Modified** | A setup or boot file in the ISO has no valid Microsoft signature: the ISO was changed after Microsoft made it. Download an original ISO from Microsoft (button on page 1) |
 | "Mount folder is not empty" | *Options and clean up* → **Clean up now** |
@@ -397,6 +418,7 @@ python src/build.py
 | `33_engine_check.ps1`, `34_engine_check2.ps1` | install check and its fixes |
 | `32_engine_jobs.ps1` | driver scan / import, answer file, run everything, job entry point for the background worker |
 | `40_gui_xaml.ps1`, `45_gui_dialogs.ps1` | window, pages and dialogs (WPF XAML) |
+| `27_engine_uup.ps1` | UUP dump metadata, download-and-convert packages, bootable ISO creation, validation and provenance |
 | `28_engine_images.ps1` | standalone WIM / ESD conversion, full language-pack CAB metadata, direct Microsoft downloads and the integration queue |
 | `48_gui_lang.ps1`, `lang/*.json`, `lang/keys.py` | interface languages: `T 'English text'` returns the text in the language in use; the tables come from `lang/<code>.json` (built into `Get-LangData`); `keys.py` lists every text and what a language still misses |
 | `50_gui.ps1`, `55_gui_main.ps1` | window logic, background worker, events |
@@ -407,7 +429,7 @@ python src/build.py
 pwsh tests/run-tests.ps1
 ```
 
-Sixteen suites run the PowerShell part on Linux / macOS with PowerShell 7: catalog parsing (Windows 10 and Windows 11 titles, the 24H2 checkpoint order, the DISM choice), signing with stand-ins for `signtool` / `Inf2Cat` (an NVCleanstall-style untrusted catalog, live Inf2Cat status from a worker runspace, keeping only this PC's INF files, isolated copies with only the edited INF files, an own catalog for an INF whose catalog is shared (NVIDIA's `nv_dispi.cat`) with its encoding kept, several Inf2Cat runs at the same time, the fallback to the whole folder, batched signing, the time estimate), the signing engines with stand-ins for `makecat`, `expand` and WSL (one catalog per folder with every file in it, compressed files expanded, the `.cdf`, the CryptCAT source compiled, the fallback to Inf2Cat, the engine buttons), `$OEM$` assembly, every install check finding and fix, an answer file made by the autounattend generator (`tests/fixtures`, personal data removed), the page refresh with Windows PowerShell 5.1's JSON behaviour simulated (and the taskbar progress), the dark / light theme (XAML conversion, a light color for every color, text contrast) with the text size and font settings, the interface languages (every text translated in every language, placeholders and formats kept, the language in use, switching), a whole slipstream against a stand-in `dism` (boot.wim and WinRE in the background vs. sequential, several editions at the same time — how many at once, the edition order of the new `install.wim`, WinRE in every edition, a failing edition, no background worker — updates the image already has, `boot.wim` in one pass, older driver versions, a failed WinRE update, the driver set, the Defender option, the time per step), the ISO build against a stand-in `oscdimg` (failed build, ISO in use, free space), the download step with a stand-in catalog (the servicing stack lookup running while the other updates download), and the original ISO check (Microsoft's table markup, the built-in list, the SHA-256 against `Get-FileHash`, microsoft.com online and offline, the result kept and not read again, subscription file names, the signatures of the setup and boot files with a stand-in for `Get-AuthenticodeSignature`, mounting the ISO, Media Creation Tool and modified ISOs, page 1 and the question before unpacking). The image suite also covers conversion compression, source preservation, Store index filtering, failed export cleanup, language CAB metadata and hashes, download failures and SSU → language → LCU ordering. DISM, WPF and real driver installs still need a Windows test run.
+Seventeen suites run the PowerShell part on Linux / macOS with PowerShell 7: catalog parsing (Windows 10 and Windows 11 titles, the 24H2 checkpoint order, the DISM choice), signing with stand-ins for `signtool` / `Inf2Cat` (an NVCleanstall-style untrusted catalog, live Inf2Cat status from a worker runspace, keeping only this PC's INF files, isolated copies with only the edited INF files, an own catalog for an INF whose catalog is shared (NVIDIA's `nv_dispi.cat`) with its encoding kept, several Inf2Cat runs at the same time, the fallback to the whole folder, batched signing, the time estimate), the signing engines with stand-ins for `makecat`, `expand` and WSL (one catalog per folder with every file in it, compressed files expanded, the `.cdf`, the CryptCAT source compiled, the fallback to Inf2Cat, the engine buttons), `$OEM$` assembly, every install check finding and fix, an answer file made by the autounattend generator (`tests/fixtures`, personal data removed), the page refresh with Windows PowerShell 5.1's JSON behaviour simulated (and the taskbar progress), the dark / light theme (XAML conversion, a light color for every color, text contrast) with the text size and font settings, the interface languages (every text translated in every language, placeholders and formats kept, the language in use, switching), a whole slipstream against a stand-in `dism` (boot.wim and WinRE in the background vs. sequential, several editions at the same time — how many at once, the edition order of the new `install.wim`, WinRE in every edition, a failing edition, no background worker — updates the image already has, `boot.wim` in one pass, older driver versions, a failed WinRE update, the driver set, the Defender option, the time per step), the ISO build against a stand-in `oscdimg` (failed build, ISO in use, free space), the download step with a stand-in catalog (the servicing stack lookup running while the other updates download), and the original ISO check (Microsoft's table markup, the built-in list, the SHA-256 against `Get-FileHash`, microsoft.com online and offline, the result kept and not read again, subscription file names, the signatures of the setup and boot files with a stand-in for `Get-AuthenticodeSignature`, mounting the ISO, Media Creation Tool and modified ISOs, page 1 and the question before unpacking). The image suite also covers conversion compression, source preservation, Store index filtering, failed export cleanup, language CAB metadata and hashes, download failures and SSU → language → LCU ordering. The UUP suite covers API data shapes, selection validation, ZIP paths, converter settings, download failures, ISO validation, complete setup-folder conversion and preservation of existing media. Live UUP downloads, native conversion, DISM, WPF and real driver installs still need a Windows test run.
 
 ---
 
@@ -417,7 +439,7 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 | Version | Date | Highlights |
 |---|---|---|
-| **4.5.0** | 2026-11-01 | ESD / WIM and Store ESD conversions with performance guidance; Windows language-pack CAB downloads, imports and integration |
+| **4.5.0** | 2026-11-01 | In-app Windows 10 / 11 downloads through UUP dump with automatic ISO creation; ESD / WIM conversions; Windows language packs |
 | 4.4.0 | 2026-10-31 | ISO check: an ISO made with the Media Creation Tool is recognised, and the Microsoft signatures of an ISO's setup and boot files are checked when its SHA-256 isn't listed |
 | 4.3.1 | 2026-10-31 | Fix: 4.2.0 and 4.3.0 didn't open on Windows (*"Argument types do not match"*) |
 | 4.3.0 | 2026-10-31 | Page 1 checks that the ISO is an original from Microsoft (SHA-256 against Microsoft's published values) and says what to do when it isn't |
@@ -464,7 +486,7 @@ Microsoft, Windows, Windows PE, DISM, Microsoft Defender (Windows Defender) and 
 
 ### Windows is not included — you need your own license
 
-- The tool contains **no Windows files, no product keys and no activation workaround**, and it doesn't change licensing or activation. You supply the Windows 10 or 11 ISO yourself (for example from Microsoft's download pages for [Windows 10](https://www.microsoft.com/software-download/windows10ISO) and [Windows 11](https://www.microsoft.com/software-download/windows11)).
+- The tool contains **no Windows files, no product keys and no activation workaround**, and it doesn't change licensing or activation. Use your own Windows 10 / 11 ISO (for example from Microsoft's download pages for [Windows 10](https://www.microsoft.com/software-download/windows10ISO) and [Windows 11](https://www.microsoft.com/software-download/windows11)), or let the app download Microsoft UUP files through UUP dump and create an ISO locally.
 - Every PC you install Windows on with the ISO needs a **valid Windows license**. Installing from an updated ISO doesn't change that.
 - **ESU:** the tool doesn't integrate Windows 10 Extended Security Updates (November 2025 and later) and doesn't get around ESU enrolment. Enrolled PCs get those updates from Windows Update.
 
@@ -477,6 +499,7 @@ Microsoft, Windows, Windows PE, DISM, Microsoft Defender (Windows Defender) and 
 
 ### Other tools
 
+- **UUP dump / UUP converter** (only when you choose in-app Windows downloads): the app obtains the download-and-convert package from [UUP dump](https://uupdump.net/) and runs it locally. Its upstream downloader, aria2, extraction / image tools and UUP converter retain their own licenses and notices; they are downloaded on demand and are not included in this repository. UUP dump is an independent community project, not a Microsoft service.
 - **generate-cat-file** (signing engine, only if you choose it): the source code of [LINBIT/generate-cat-file](https://github.com/LINBIT/generate-cat-file) (GPL-2.0) is downloaded from GitHub at a pinned commit and compiled on your own PC inside WSL. It is not included in or redistributed by this repository and keeps its own license.
 - **libwdi-style** (signing engine): this project's own implementation of the catalog-building approach of the LGPL-licensed [libwdi](https://github.com/pbatard/libwdi) project. It contains no libwdi code.
 - The signing engines come from [NVIDIA Modded Drivers Signer](https://github.com/j0p3s/nvidia-modded-drivers-signer), a project by the same author.
@@ -513,7 +536,7 @@ Read the Install check findings before booting an ISO on a PC with data you care
 
 ### Privacy
 
-The tool sends no telemetry and nothing about you or your PC. Its only network requests go to Microsoft's servers (Update Catalog and download servers, symbol server) and to nuget.org, to download the files above, and, only with the generate-cat-file signing engine, to github.com for that tool's source code. Those services' own privacy policies apply to those requests. Two buttons, *Download Windows 10 from Microsoft* and *Open the generator*, open a web page in your browser. Details: [Privacy](#privacy-what-stays-on-your-pc).
+The app has no telemetry and does not upload your drivers, answer files, signing keys or ISO contents. Network requests include Microsoft download / update services, optional UUP dump metadata and download packages, and GitHub source downloads for generate-cat-file. UUP requests include the build, architecture, language and edition you select; upstream tools use their own download services and privacy policies. The app also provides links that open Microsoft, UUP dump and the answer-file generator in your browser. Details: [Privacy](#privacy-what-stays-on-your-pc).
 
 ## License
 

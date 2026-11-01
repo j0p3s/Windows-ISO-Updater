@@ -28,6 +28,39 @@ function Complete-IsoCheck {
     }
     & $then
 }
+function Invoke-UupSearchClick {
+    $U = $Script:U
+    $arch = if ($U.UupArm64.IsChecked) { 'arm64' } elseif ($U.UupX86.IsChecked) { 'x86' } else { 'amd64' }
+    $U.UupBuildGrid.ItemsSource = $null; $U.UupLangGrid.ItemsSource = $null; $U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupSearch' @{ Os = [string]$Script:Cfg.WinVersion; Arch = $arch; Build = $U.UupBuildFilter.Text.Trim(); Preview = [bool]$U.UupPreview.IsChecked } {
+        $Script:U.UupBuildGrid.ItemsSource = (New-Table @('Title', 'Build', 'Architecture', 'Id', 'Arch') @(foreach ($b in @($Script:Sync.Result)) { , @($b.Title, $b.Build, $b.Architecture, $b.Id, $b.Arch) })).DefaultView
+    }
+}
+function Invoke-UupLanguagesClick {
+    $row = $Script:U.UupBuildGrid.SelectedItem
+    if (-not $row) { Show-Msg (T 'Select a Windows build first.') 'Warning'; return }
+    $Script:U.UupLangGrid.ItemsSource = $null; $Script:U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupLanguages' @{ Id = [string]$row['Id'] } {
+        $Script:U.UupLangGrid.ItemsSource = (New-Table @('Name', 'Code') @(foreach ($v in @($Script:Sync.Result)) { , @($v.Name, $v.Code) })).DefaultView
+    }
+}
+function Invoke-UupEditionsClick {
+    $build = $Script:U.UupBuildGrid.SelectedItem; $lang = $Script:U.UupLangGrid.SelectedItem
+    if (-not $build -or -not $lang) { Show-Msg (T 'Select a build and load its languages first.') 'Warning'; return }
+    $Script:U.UupEditionGrid.ItemsSource = $null
+    Start-Work 'UupEditions' @{ Id = [string]$build['Id']; Language = [string]$lang['Code'] } {
+        $Script:U.UupEditionGrid.ItemsSource = (New-Table @('Name', 'Code') @(foreach ($v in @($Script:Sync.Result)) { , @($v.Name, $v.Code) })).DefaultView
+    }
+}
+function Invoke-UupDownloadClick {
+    $build = $Script:U.UupBuildGrid.SelectedItem; $lang = $Script:U.UupLangGrid.SelectedItem; $edition = $Script:U.UupEditionGrid.SelectedItem
+    if (-not $build -or -not $lang -or -not $edition) { Show-Msg (T 'Select a build, language and edition before downloading.') 'Warning'; return }
+    $choice = @{ Id = [string]$build['Id']; Build = [string]$build['Build']; Arch = [string]$build['Arch']; Language = [string]$lang['Code']; Edition = [string]$edition['Code'] }
+    Start-Work 'UupDownload' @{ Choice = $choice } {
+        $Script:U.IsoBox.Text = [string]$Script:Sync.Result.Iso
+        Write-Ok (T 'Windows ISO ready. Press Unpack and analyze to use it.')
+    }
+}
 function Invoke-IsoCheckClick {
     $iso = $Script:U.IsoBox.Text.Trim().Trim('"')
     if (-not $iso -or -not (Test-Path -LiteralPath $iso -PathType Leaf)) { Show-Msg (T 'Choose an existing .iso file first.') 'Warning'; return }
@@ -264,6 +297,14 @@ try {
         $f = Select-File ((T 'Select a Windows {0} ISO') -f $(if ($Script:Cfg.WinVersion -eq '11') { '11' } else { '10' })) ((T 'ISO images') + ' (*.iso)|*.iso') $start
         if ($f) { $Script:U.IsoBox.Text = $f }
     })
+    $U.UupSearch.Add_Click({ Invoke-UupSearchClick })
+    $U.UupLanguages.Add_Click({ Invoke-UupLanguagesClick })
+    $U.UupEditions.Add_Click({ Invoke-UupEditionsClick })
+    $U.UupDownload.Add_Click({ Invoke-UupDownloadClick })
+    $U.UupOpen.Add_Click({ Start-Process 'https://uupdump.net/' })
+    $U.UupBuildGrid.Add_AutoGeneratingColumn({ param($s, $e) if ($e.PropertyName -in 'Id', 'Arch') { $e.Cancel = $true } })
+    $U.UupBuildGrid.Add_SelectionChanged({ $Script:U.UupLangGrid.ItemsSource = $null; $Script:U.UupEditionGrid.ItemsSource = $null })
+    $U.UupLangGrid.Add_SelectionChanged({ $Script:U.UupEditionGrid.ItemsSource = $null })
     $U.UnpackBtn.Add_Click({ Invoke-UnpackClick })
     $U.IsoCheckBtn.Add_Click({ Invoke-IsoCheckClick })
     $U.IsoBox.Add_TextChanged({ if (-not $Script:Loading) { Update-IsoCheck } })

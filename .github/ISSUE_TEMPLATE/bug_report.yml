@@ -30,6 +30,7 @@ body:
       label: Where did it happen?
       options:
         - Start / window
+        - UUP dump / Windows download
         - 1 Source ISO
         - 2 Editions
         - 3 Windows updates
