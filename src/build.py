@@ -45,9 +45,9 @@ settings = edit(settings, "    $code = Invoke-Exe $Script:Dism ('/English /LogPa
     $code = Invoke-Exe $Script:Dism ('/English /LogPath:' + (Q $Script:DismLog) + $sd + ' ' + $Arguments)""")
 settings = edit(settings, "        Updates = @(); Drivers = @(); Unattend = $null; Serviced = $null; Iso = $null\n",
                 "        Updates = @(); Drivers = @(); Unattend = $null; Serviced = $null; Iso = $null\n"
-                "        Oem = $null; Signed = @(); OemSynced = $false\n")
+                "        Oem = $null; Signed = @(); OemSynced = $false; LanguagePacks = @()\n")
 settings = edit(settings, "foreach ($k in 'Images', 'Selected', 'Updates', 'Drivers') {",
-                "foreach ($k in 'Images', 'Selected', 'Updates', 'Drivers', 'Signed') {")
+                "foreach ($k in 'Images', 'Selected', 'Updates', 'Drivers', 'Signed', 'LanguagePacks') {")
 old_exe = rng(257, 261)
 assert old_exe.startswith('function Invoke-Exe'), old_exe
 settings = edit(settings, old_exe + '\n', '')          # replaced by the live-output version
@@ -88,7 +88,7 @@ unpack = edit(unpack, """    if (-not $iso) {
 unpack = edit(unpack, "if (-not (Read-YesNo 'The work folder already has unpacked media. Replace it?' $true)) { return }",
               "if (-not $Script:NoAsk -and -not (Read-YesNo 'The work folder already has unpacked media. Replace it?' $true)) { return }")
 unpack = edit(unpack, "    $Script:S.SourceIso = $iso\n", "    $prevIso = $Script:S.SourceIso\n    $Script:S.SourceIso = $iso\n")
-unpack = edit(unpack, "    $Script:S.Selected  = @()\n", "    if ($prevIso -ne $iso) { $Script:S.Selected = @() }\n")
+unpack = edit(unpack, "    $Script:S.Selected  = @()\n", "    if ($prevIso -ne $iso) { $Script:S.Selected = @(); $Script:S.LanguagePacks = @() }\n")
 unpack = edit(unpack, "    $Script:S.Iso       = $null\n", "    $Script:S.Iso       = $null\n    $Script:S.OemSynced = $false\n")
 
 # v1 lines 708-773 (download) now live in src/37_engine_download.ps1
@@ -136,7 +136,7 @@ def known_iso_hashes():
 
 engine = '\n\n'.join([
     part('10_engine_head.ps1'),
-    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'),
+    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'), part('28_engine_images.ps1'),
     part('29_engine_isocheck.ps1'), known_iso_hashes(),
     drivers_a, drivers_b, '#endregion', unattend, part('35_engine_service.ps1'), part('36_engine_build.ps1'),
     part('30_engine_tools.ps1'), part('31_engine_sign.ps1'), part('39_engine_catalogs.ps1'), part('33_engine_check.ps1'), part('34_engine_check2.ps1'), part('32_engine_jobs.ps1'),

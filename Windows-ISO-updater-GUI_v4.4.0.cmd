@@ -210,7 +210,7 @@ function New-State {
     return [ordered]@{
         SourceIso = $null; Unpacked = $false; Images = @(); Family = $null; Selected = @()
         Updates = @(); Drivers = @(); Unattend = $null; Serviced = $null; Iso = $null
-        Oem = $null; Signed = @(); OemSynced = $false
+        Oem = $null; Signed = @(); OemSynced = $false; LanguagePacks = @()
     }
 }
 function Import-State {
@@ -221,7 +221,7 @@ function Import-State {
             foreach ($k in @($j.Keys)) { $s[$k] = $j[$k] }
         } catch { Write-Warn 'state.json is unreadable - starting fresh.' }
     }
-    foreach ($k in 'Images', 'Selected', 'Updates', 'Drivers', 'Signed') { if ($null -eq $s[$k]) { $s[$k] = @() } else { $s[$k] = @($s[$k]) } }
+    foreach ($k in 'Images', 'Selected', 'Updates', 'Drivers', 'Signed', 'LanguagePacks') { if ($null -eq $s[$k]) { $s[$k] = @() } else { $s[$k] = @($s[$k]) } }
     return $s
 }
 function Save-State {
@@ -545,7 +545,7 @@ function Invoke-Unpack {
     $prevIso = $Script:S.SourceIso
     $Script:S.SourceIso = $iso
     $Script:S.Unpacked  = $true
-    if ($prevIso -ne $iso) { $Script:S.Selected = @() }
+    if ($prevIso -ne $iso) { $Script:S.Selected = @(); $Script:S.LanguagePacks = @() }
     $Script:S.Updates   = @()
     $Script:S.Serviced  = $null
     $Script:S.Iso       = $null
@@ -855,6 +855,138 @@ function Invoke-Download([switch]$Auto) {
     $Script:S.Updates = $records
     Save-State
     Write-Ok "All packages are in $($Script:P.Updates)"
+}
+#endregion
+
+#region ---------------------------------------------------------------- Image conversions
+function Invoke-ImageConversion([string]$Source, [string]$Destination, [string]$Mode) {
+    if ($Mode -notin 'EsdToWim', 'WimToEsd', 'StoreToWim') { throw 'Choose an image conversion.' }
+    $srcExt = if ($Mode -eq 'WimToEsd') { '.wim' } else { '.esd' }
+    $dstExt = if ($Mode -eq 'WimToEsd') { '.esd' } else { '.wim' }
+    $Source = [IO.Path]::GetFullPath($Source)
+    $Destination = [IO.Path]::GetFullPath($Destination)
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf) -or [IO.Path]::GetExtension($Source) -ine $srcExt) { throw "Choose an existing $srcExt source image." }
+    if ([IO.Path]::GetExtension($Destination) -ine $dstExt) { throw "The destination must end in $dstExt." }
+    if ($Source -ieq $Destination -or (Test-Path -LiteralPath $Destination)) { throw 'Choose a new destination file. Existing files are never overwritten.' }
+    try { $images = Get-ImageList $Source }
+    catch { throw "Cannot read this image. Encrypted Store ESDs must be decrypted with a legitimate key before conversion. DISM: $($_.Exception.Message)" }
+    if ($Mode -eq 'StoreToWim') {
+        # Store ESDs also contain media / WinPE / Setup indexes. Export only Windows installations.
+        $images = @($images | Where-Object { $_.Edition -and $_.Edition -notmatch '^(WindowsPE|WindowsSetup)$' -and $_.Name -notmatch '(?i)Windows (PE|Setup|Recovery)|Windows Setup Media' })
+    }
+    if (-not $images.Count) { throw 'No Windows installation editions found in this image.' }
+    $Script:Dism = Get-ServicingDism ([int]$images[0].Build) -Install
+    New-Item -ItemType Directory -Force -Path (Split-Path $Destination -Parent) | Out-Null
+    $need = [double]($images | Measure-Object -Property Size -Sum).Sum + 256MB
+    $free = Get-FreeBytes $Destination
+    if ($free -ge 0 -and $free -lt $need) { throw "Not enough space for conversion. Allow about $(Format-Size $need) for the uncompressed image data." }
+    $part = Join-Path (Split-Path $Destination -Parent) (([guid]::NewGuid().ToString('N')) + $dstExt)
+    Write-Title 'Convert Windows image'
+    if ($Mode -eq 'WimToEsd') { Write-Info 'ESD: slower, CPU-intensive solid compression; smaller media. Setup may need more CPU time to decompress, but reads fewer bytes.' }
+    else { Write-Info 'WIM: generally faster to create and service; larger media. Setup usually needs less decompression work, but reads more bytes.' }
+    Write-Info 'Setup speed depends on CPU and storage. Installed Windows performance is unchanged by this conversion.'
+    $start = Get-Date
+    try {
+        $n = 0
+        foreach ($i in $images) {
+            $n++
+            Write-Step "Source index $($i.Index) ($($i.Name)) -> destination index $n"
+            $compress = if ($Mode -eq 'WimToEsd') { 'recovery' } else { 'max' }
+            Invoke-Dism "/Export-Image /SourceImageFile:$(Q $Source) /SourceIndex:$($i.Index) /DestinationImageFile:$(Q $part) /Compress:$compress /CheckIntegrity" 'Convert image'
+        }
+        $check = Get-ImageList $part
+        if ($check.Count -ne $images.Count) { throw 'The converted image failed edition-count verification.' }
+        # File.Move refuses an existing destination, even if it appeared while the export was running.
+        [IO.File]::Move($part, $Destination)
+    } finally { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+    Write-Ok ("Image ready: $Destination ({0}; {1:hh\:mm\:ss})" -f (Format-Size (Get-Item -LiteralPath $Destination).Length), ((Get-Date) - $start))
+    Write-Info 'The source image is unchanged. A Store ESD conversion creates an install image, not a bootable ISO; use matching Windows setup media.'
+}
+#endregion
+
+#region ---------------------------------------------------------------- Windows language packs
+function Test-LanguageDownloadUrl([string]$Url) {
+    $uri = $null
+    if (-not [uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne 'https' -or $uri.UserInfo -or $uri.Fragment) { throw 'Use a direct HTTPS Microsoft language-pack CAB URL.' }
+    if ($Url -match '[\s"\x00-\x1f]' -or $uri.DnsSafeHost -notmatch '(^|\.)(download\.windowsupdate\.com|download\.microsoft\.com)$' -or $uri.AbsolutePath -notmatch '(?i)\.cab$') { throw 'Use a direct CAB link on download.windowsupdate.com or download.microsoft.com.' }
+}
+function Read-LanguagePackManifest([string]$Text) {
+    # Do not resolve external entities from imported manifests.
+    $settings = New-Object Xml.XmlReaderSettings
+    $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $reader = [Xml.XmlReader]::Create((New-Object IO.StringReader($Text)), $settings)
+    try { $xml = New-Object Xml.XmlDocument; $xml.XmlResolver = $null; $xml.Load($reader) } finally { $reader.Dispose() }
+    $id = $xml.SelectSingleNode('/*[local-name()="assembly"]/*[local-name()="assemblyIdentity"]')
+    if (-not $id -or [string]$id.name -notmatch '(?i)^Microsoft-Windows-(Client|Server)-LanguagePack-Package$' -or [string]$id.publicKeyToken -ine '31bf3856ad364e35') { throw 'This CAB is not a full Microsoft Windows language pack. LXP, WinPE and Features on Demand packages are not supported here.' }
+    $v = [version]([string]$id.version)
+    $culture = [Globalization.CultureInfo]::GetCultureInfo([string]$id.language)
+    if ($culture.IsNeutralCulture -or -not $culture.Name) { throw 'The language pack has no specific Windows language.' }
+    return [ordered]@{ Language = $culture.Name; Arch = (ConvertTo-ArchName ([string]$id.processorArchitecture)); Build = $v.Build }
+}
+function Get-LanguagePackInfo([string]$File) {
+    $dir = Join-Path $Script:P.Temp ('lp-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try {
+        $r = Invoke-Native (Join-Path $env:SystemRoot 'System32\expand.exe') @($File, '-F:update.mum', $dir)
+        $mum = Join-Path $dir 'update.mum'
+        if ($r.Code -ne 0 -or -not (Test-Path -LiteralPath $mum)) { throw 'Cannot read update.mum from this language-pack CAB.' }
+        return Read-LanguagePackManifest ([IO.File]::ReadAllText($mum))
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+function Assert-LanguagePackTarget($Pack) {
+    Assert-Analyzed
+    foreach ($img in @($Script:S.Images | Where-Object { $Script:S.Selected -contains $_.Index })) {
+        if ($Pack.Arch -ne $img.Arch -or (Get-BaseBuild $Pack.Build) -ne (Get-BaseBuild ([int]$img.Build))) { throw "Language pack $($Pack.Language) build $($Pack.Build) / $($Pack.Arch) does not match edition $($img.Name) build $($img.Build) / $($img.Arch)." }
+    }
+    if (-not @($Script:S.Selected).Count) { throw 'Tick at least one edition before adding language packs.' }
+}
+function Add-LanguagePack([string]$File) {
+    Assert-Analyzed
+    if ($Script:S.Serviced) { throw 'Add language packs to fresh media before slipstreaming. Unpack the original ISO again first.' }
+    if (-not (Test-Path -LiteralPath $File -PathType Leaf) -or [IO.Path]::GetExtension($File) -ine '.cab') { throw 'Choose an existing full language-pack CAB.' }
+    $pack = Get-LanguagePackInfo $File
+    Assert-LanguagePackTarget $pack
+    $hash = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
+    $dir = Join-Path $Script:P.Work 'languages'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $dest = Join-Path $dir ("$($pack.Language)-$($pack.Build)-$($pack.Arch)-$hash.cab")
+    if (-not (Test-Path -LiteralPath $dest) -or (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -ine $hash) { Copy-Item -LiteralPath $File -Destination $dest -Force }
+    $pack.File = $dest; $pack.Sha256 = $hash
+    $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_ -and $_.Language -ne $pack.Language }) + @($pack)
+    Save-State
+    Write-Ok "$($pack.Language) queued for the ticked Windows editions. DISM verifies package applicability and signatures when integrating."
+}
+function Save-LanguagePack([string]$Url, [string]$Sha256) {
+    Assert-Analyzed
+    if ($Script:S.Serviced) { throw 'Add language packs to fresh media before slipstreaming. Unpack the original ISO again first.' }
+    if (-not @($Script:S.Selected).Count) { throw 'Tick at least one edition before adding language packs.' }
+    Test-LanguageDownloadUrl $Url
+    if ($Sha256 -and $Sha256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'SHA-256 must contain exactly 64 hexadecimal characters, or be left empty.' }
+    $dir = Join-Path $Script:P.Temp ('lp-download-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $file = Join-Path $dir 'language.cab'
+    try {
+        # Reject redirects: a Microsoft URL must not send this downloader to an arbitrary host.
+        $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+        if (-not (Test-Path -LiteralPath $curl)) { throw 'curl.exe is required for direct language-pack downloads (included with current Windows 10/11).' }
+        $code = Invoke-Exe $curl ("--fail --location --proto =https --max-redirs 0 --retry 2 --output $(Q $file) $(Q $Url)") -MergeErr
+        if ($code -ne 0 -or -not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -eq 0) { throw 'Language-pack download failed. Use a direct Microsoft CAB link.' }
+        if ($Sha256 -and (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $Sha256) { throw 'Language-pack SHA-256 mismatch. The download was not queued.' }
+        Add-LanguagePack $file
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+function Test-QueuedLanguagePacks {
+    foreach ($pack in @($Script:S.LanguagePacks | Where-Object { $_ })) {
+        Assert-LanguagePackTarget $pack
+        if (-not (Test-Path -LiteralPath $pack.File -PathType Leaf) -or (Get-FileHash -LiteralPath $pack.File -Algorithm SHA256).Hash -ine $pack.Sha256) { throw "Language pack $($pack.Language) is missing or changed. Add it again before slipstreaming." }
+    }
+}
+function Add-QueuedLanguagePacks([string]$MountDir) {
+    foreach ($pack in @($Script:S.LanguagePacks | Where-Object { $_ })) {
+        # No -Soft: a rejected language pack must stop the job before media is replaced.
+        Add-Pkg $MountDir $pack.File "Windows language $($pack.Language)"
+    }
 }
 #endregion
 
@@ -1532,11 +1664,16 @@ function Add-EditionUpdates([string]$MountDir, $Upd, [string]$Fu, [string]$LcuTi
     $t = Get-Date
     foreach ($x in @($Upd.SSU)) { Set-SideLabel "$Part servicing stack"; Add-Pkg $MountDir $x 'Servicing stack' -Soft }
     if (@($Upd.SSU).Count) { Add-Timing $Times $Part 'servicing stack' $t }
+    $t = Get-Date
+    Add-QueuedLanguagePacks $MountDir
+    if (@($Script:S.LanguagePacks).Count) { Add-Timing $Times $Part 'language packs' $t }
     $t = Get-Date; $done = 0
     foreach ($x in @($Upd.LCU)) {
-        if ($LcuBuild -and (Test-UpdateInImage $LcuBuild[$x] $ImgVersion)) { Write-Sub "Cumulative update : $(Split-Path $x -Leaf) - this edition is already at build $ImgVersion, skipped"; continue }
+        if (-not @($Script:S.LanguagePacks).Count -and $LcuBuild -and (Test-UpdateInImage $LcuBuild[$x] $ImgVersion)) { Write-Sub "Cumulative update : $(Split-Path $x -Leaf) - this edition is already at build $ImgVersion, skipped"; continue }
         Set-SideLabel "$Part cumulative update"
-        try { Add-Pkg $MountDir $x 'Cumulative update' -IgnoreHex @('800F081E') }
+        $ignore = @()
+        if (-not @($Script:S.LanguagePacks).Count) { $ignore = @('800F081E') }
+        try { Add-Pkg $MountDir $x 'Cumulative update' -IgnoreHex $ignore }
         catch { Write-Err $LcuTip; throw }
         $done++
     }
@@ -1922,7 +2059,13 @@ function Invoke-Service([switch]$Auto) {
         Write-Warn "This media was already serviced on $($S.Serviced.When). For a clean result unpack the ISO again (step 1)."
         if (-not (Read-YesNo 'Service it again anyway?' $false)) { return }
     }
+    Test-QueuedLanguagePacks
+    if (@($S.LanguagePacks).Count -and $S.Serviced) { throw 'Language packs need fresh media. Unpack the original ISO before slipstreaming again.' }
     $upd = Get-UpdateFiles
+    if (@($S.LanguagePacks).Count) {
+        Write-Info 'Language packs are added to ticked Windows editions before cumulative updates. Setup/WinPE and WinRE languages are unchanged.'
+        if (-not @($upd.LCU).Count) { throw 'Download a matching cumulative update before integrating language packs, so its language resources can be applied too.' }
+    }
     $Script:Dism = Get-ServicingDism ([int]$S.Family.Build) -Install       # a newer DISM for Windows 11 on a Windows 10 PC
     if ($Script:Dism -match '(?i)Assessment and Deployment Kit') { Write-Info "DISM of the Windows ADK: $($Script:Dism)" }
     $updCount = 0; foreach ($k in $upd.Keys) { $updCount += @($upd[$k]).Count }
@@ -2127,6 +2270,8 @@ function Invoke-Service([switch]$Auto) {
         Boot2023 = $b2023
         Updates  = @($S.Updates | ForEach-Object { $_.KB })
     }
+    $S.Images = @($newList)
+    $S.Selected = @(for ($j = 0; $j -lt $exportIdx.Count; $j++) { if ($S.Selected -contains $exportIdx[$j]) { $j + 1 } })
     $S.Iso = $null
     Save-State
     Remove-Item -LiteralPath $P.Temp -Recurse -Force -ErrorAction SilentlyContinue
@@ -5037,7 +5182,7 @@ function Invoke-CleanJob($A) {
     }
     if ($A.Media -and (Test-Path -LiteralPath $Script:P.Media)) {
         Remove-Item -LiteralPath $Script:P.Media -Recurse -Force
-        $Script:S.Unpacked = $false; $Script:S.Serviced = $null; $Script:S.Images = @(); $Script:S.Family = $null; $Script:S.Selected = @(); $Script:S.OemSynced = $false
+        $Script:S.Unpacked = $false; $Script:S.Serviced = $null; $Script:S.Images = @(); $Script:S.Family = $null; $Script:S.Selected = @(); $Script:S.OemSynced = $false; $Script:S.LanguagePacks = @()
         Write-Ok 'Unpacked media deleted.'
     }
     if ($A.Output -and (Test-Path -LiteralPath $Script:P.Output)) {
@@ -5061,7 +5206,7 @@ function Invoke-CleanJob($A) {
     if ($A.All) {
         # start from scratch: everything this tool keeps in the work folder goes, the state starts empty.
         # Only its own names are deleted - anything else in that folder is left alone.
-        $own = @('media', 'updates', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
+        $own = @('media', 'updates', 'languages', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
                  'autounattend.original.xml', 'install-check.json', 'defender-exclusion.txt')
         $Script:LogFile = $null
         foreach ($n in $own) {
@@ -5135,6 +5280,9 @@ function Invoke-Job([string]$Job, $A) {
             'CheckIso'     { $Script:Sync.Result = Test-IsoOriginal ([string]$A.Iso) }
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }
+            'ConvertImage' { Invoke-ImageConversion $A.Source $A.Destination $A.Mode }
+            'ImportLanguage' { Add-LanguagePack $A.File }
+            'DownloadLanguage' { Save-LanguagePack $A.Url $A.Sha256 }
             'Download'     { Invoke-Download -Auto }
             'ScanHost'     { $Script:Sync.Result = @(Get-HostDriverScan) }
             'CommitHost'   { Save-HostDrivers $A.Pick }
@@ -5679,6 +5827,24 @@ $Script:XPages = @'
               <TextBlock Style="{StaticResource H2}" Text="Downloaded"/>
               <DataGrid x:Name="UpdGrid" Height="210"/>
             </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Windows language packs"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged."/>
+              <TextBlock Text="Direct Microsoft CAB URL" Margin="0,4"/>
+              <TextBox x:Name="LpUrl"/>
+              <TextBlock Text="Expected SHA-256 (optional)" Margin="0,10,0,4"/>
+              <TextBox x:Name="LpHash"/>
+              <WrapPanel Margin="0,14,0,10">
+                <Button x:Name="LpDownload" Style="{StaticResource Primary}" Content="Download and add language pack"/>
+                <Button x:Name="LpImport" Style="{StaticResource Btn}" Content="Import CAB..."/>
+              </WrapPanel>
+              <DataGrid x:Name="LpGrid" Height="150"/>
+              <WrapPanel Margin="0,10,0,0">
+                <Button x:Name="LpRemove" Style="{StaticResource Btn}" Content="Remove selected language pack"/>
+                <Button x:Name="LpHelp" Style="{StaticResource Btn}" Content="Microsoft language-pack sources"/>
+              </WrapPanel>
+            </StackPanel></Border>
           </StackPanel></ScrollViewer></TabItem>
 
           <!-- 4 drivers -->
@@ -5856,6 +6022,25 @@ $Script:XPages = @'
           <!-- 9 tools -->
           <TabItem Visibility="Collapsed" Foreground="#E6EAF2"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,18,24,18">
             <TextBlock Style="{StaticResource H1}" Text="Tools"/>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Convert Windows image"/>
+              <RadioButton x:Name="ConvEsdWim" Style="{StaticResource Seg}" GroupName="conversion" IsChecked="True" Margin="0,4" Content="Convert Windows ESD Image to WIM Image"/>
+              <RadioButton x:Name="ConvWimEsd" Style="{StaticResource Seg}" GroupName="conversion" Margin="0,4" Content="Convert Windows WIM Image to ESD Image"/>
+              <RadioButton x:Name="ConvStoreWim" Style="{StaticResource Seg}" GroupName="conversion" Margin="0,4" Content="Convert Windows Store ESD Image to WIM Image"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,10,0,6" Text="WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file."/>
+              <TextBlock Text="Source image" Margin="0,4"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="ConvSource" Margin="0,0,8,0"/>
+                <Button x:Name="ConvBrowse" Grid.Column="1" Style="{StaticResource Btn}" Content="Browse..." Margin="0"/>
+              </Grid>
+              <TextBlock Text="Destination image" Margin="0,10,0,4"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="ConvDestination" Margin="0,0,8,0"/>
+                <Button x:Name="ConvSave" Grid.Column="1" Style="{StaticResource Btn}" Content="Save as..." Margin="0"/>
+              </Grid>
+              <WrapPanel Margin="0,14,0,0"><Button x:Name="ConvRun" Style="{StaticResource Primary}" Content="Convert image"/></WrapPanel>
+            </StackPanel></Border>
             <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,14" Text="Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed."/>
             <Border Style="{StaticResource Card}"><StackPanel>
               <Grid>
@@ -6147,6 +6332,15 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, para o Windows 10 2004-22
 2025-10 is the last Windows 10 update Microsoft allows offline. ESU updates (Nov 2025+) come from Windows Update after setup on enrolled PCs.	2025-10 &#xE9; a &#xFA;ltima atualiza&#xE7;&#xE3;o do Windows 10 que a Microsoft permite integrar offline. As atualiza&#xE7;&#xF5;es ESU (nov. 2025+) chegam pelo Windows Update depois da instala&#xE7;&#xE3;o, nos PCs inscritos.
 Find and download updates	Procurar e transferir atualiza&#xE7;&#xF5;es
 Downloaded	Transferidas
+Windows language packs	Pacotes de idiomas do Windows
+1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extraia um ISO e selecione as edi&#xE7;&#xF5;es. 2. Importe um CAB de idioma compat&#xED;vel ou cole abaixo a liga&#xE7;&#xE3;o direta da Microsoft. 3. Descarregue as atualiza&#xE7;&#xF5;es do Windows e integre. A compila&#xE7;&#xE3;o e a arquitetura s&#xE3;o verificadas; os pacotes s&#xE3;o adicionados &#xE0;s edi&#xE7;&#xF5;es selecionadas antes das atualiza&#xE7;&#xF5;es cumulativas. A instala&#xE7;&#xE3;o e a recupera&#xE7;&#xE3;o mant&#xEA;m o idioma original.
+Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenha pacotes CAB completos para a mesma vers&#xE3;o e arquitetura do Windows nos suportes de idiomas / Idiomas e Funcionalidades Opcionais da Microsoft. Algumas vers&#xF5;es exigem acesso a suportes licenciados; n&#xE3;o existe um cat&#xE1;logo CAB p&#xFA;blico universal. LXP e Funcionalidades a Pedido n&#xE3;o s&#xE3;o suportados aqui. Idiomas adicionais aumentam o tamanho da imagem e o tempo de manuten&#xE7;&#xE3;o; o desempenho ap&#xF3;s a instala&#xE7;&#xE3;o normalmente n&#xE3;o muda.
+Direct Microsoft CAB URL	URL direto do CAB da Microsoft
+Expected SHA-256 (optional)	SHA-256 esperado (opcional)
+Download and add language pack	Descarregar e adicionar pacote de idioma
+Import CAB...	Importar CAB...
+Remove selected language pack	Remover pacote de idioma selecionado
+Microsoft language-pack sources	Fontes de pacotes de idiomas da Microsoft
 Signed drivers are slipstreamed into install.wim with DISM, so Windows installs them on first boot. Storage and network drivers also go into boot.wim and WinRE, so Setup sees RAID / VMD disks. Modded drivers (edited INF) belong on the next page.	Os controladores assinados s&#xE3;o integrados no install.wim com o DISM, para o Windows os instalar no primeiro arranque. Os controladores de armazenamento e de rede v&#xE3;o tamb&#xE9;m para o boot.wim e o WinRE, para a Configura&#xE7;&#xE3;o ver discos RAID / VMD. Os controladores modificados (INF editado) ficam na p&#xE1;gina seguinte.
 Add drivers from this PC	Adicionar controladores deste PC
 Import a drivers folder	Importar uma pasta de controladores
@@ -6228,6 +6422,15 @@ Clean up now	Limpar agora
 Defaults	Predefini&#xE7;&#xF5;es
 Restore default options	Repor as op&#xE7;&#xF5;es predefinidas
 Open work folder	Abrir a pasta de trabalho
+Convert Windows image	Converter imagem do Windows
+Convert Windows ESD Image to WIM Image	Converter imagem ESD do Windows em WIM
+Convert Windows WIM Image to ESD Image	Converter imagem WIM do Windows em ESD
+Convert Windows Store ESD Image to WIM Image	Converter imagem ESD da Loja Windows em WIM
+WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage.	WIM: convers&#xE3;o geralmente mais r&#xE1;pida, ficheiro maior e manuten&#xE7;&#xE3;o mais simples. A instala&#xE7;&#xE3;o costuma exigir menos descompress&#xE3;o, mas l&#xEA; mais dados. ESD: convers&#xE3;o mais lenta e exigente para o processador, com ficheiro menor. A instala&#xE7;&#xE3;o l&#xEA; menos dados, mas pode descomprimir mais lentamente. O desempenho do Windows instalado &#xE9; igual; a velocidade da instala&#xE7;&#xE3;o depende do processador e do armazenamento.
+Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file.	ESD da Loja: exporta apenas edi&#xE7;&#xF5;es do Windows, ignorando os &#xED;ndices de suporte, instala&#xE7;&#xE3;o e recupera&#xE7;&#xE3;o. Os ESD encriptados exigem desencripta&#xE7;&#xE3;o pr&#xE9;via com uma chave leg&#xED;tima. O resultado &#xE9; uma imagem de instala&#xE7;&#xE3;o, n&#xE3;o um ISO de arranque. Todas as convers&#xF5;es preservam a origem e exigem um novo ficheiro de destino.
+Source image	Imagem de origem
+Destination image	Imagem de destino
+Convert image	Converter imagem
 Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed.	Tudo o que faltar &#xE9; transferido automaticamente quando um passo precisa, para a pasta tools ao lado deste ficheiro. O oscdimg.exe vem do servidor de s&#xED;mbolos da Microsoft (verificado com SHA-256) ou do Windows ADK; makecat, Inf2Cat e signtool s&#xE3;o extra&#xED;dos dos pacotes NuGet da Microsoft (Windows SDK build tools / Windows Driver Kit) - s&#xF3; essas ferramentas s&#xE3;o guardadas, nada &#xE9; instalado.
 Download missing tools now	Transferir agora as ferramentas em falta
 Open tools folder	Abrir a pasta de ferramentas
@@ -6349,6 +6552,8 @@ SizeGB	Tamanho (GB)
 Kind	Tipo
 Date	Data
 Title	T&#xED;tulo
+Architecture	Arquitetura
+File	Ficheiro
 No	N.&#xBA;
 Source	Origem
 Class	Classe
@@ -6374,6 +6579,7 @@ Drivers in {0}	Controladores em {0}
 Drivers built for another architecture than the ISO are unticked and left out.	Os controladores feitos para outra arquitetura que n&#xE3;o a da ISO ficam desmarcados e de fora.
 Choose the driver folder first (for example the folder NVCleanstall extracted).	Escolha primeiro a pasta dos controladores (por exemplo a pasta que o NVCleanstall extraiu).
 There are no .inf files in that folder or its subfolders.	N&#xE3;o h&#xE1; ficheiros .inf nessa pasta nem nas subpastas.
+Choose a source image and a new destination file.	Escolha uma imagem de origem e um novo ficheiro de destino.
 Tick at least one edition first.	Marque primeiro pelo menos uma edi&#xE7;&#xE3;o.
 This media was already slipstreamed on {0}. For a clean result unpack the ISO again (page 1). Slipstream again anyway?	Este suporte j&#xE1; foi integrado em {0}. Para um resultado limpo, extraia de novo a ISO (p&#xE1;gina 1). Integrar de novo mesmo assim?
 No updates are downloaded (page 3). Continue with drivers and options only?	N&#xE3;o h&#xE1; atualiza&#xE7;&#xF5;es transferidas (p&#xE1;gina 3). Continuar s&#xF3; com controladores e op&#xE7;&#xF5;es?
@@ -6399,6 +6605,7 @@ Use a number from 1 to 8 (or leave it empty for the number of processor cores, u
 Use a number from 1 to 4 (or leave it empty: 2 on 4+ processor cores, 3 on 8+).	Use um n&#xFA;mero de 1 a 4 (ou deixe vazio: 2 com 4+ n&#xFA;cleos, 3 com 8+).
 Select a Windows {0} ISO	Selecione uma ISO do Windows {0}
 ISO images	Imagens ISO
+Import a full Windows language-pack CAB	Importar um CAB completo de idioma do Windows
 Select the drivers to remove in the list first (Ctrl+click for several).	Selecione primeiro na lista os controladores a remover (Ctrl+clique para v&#xE1;rios).
 Remove every selected driver?	Remover todos os controladores selecionados?
 Pick the modded driver folder (e.g. the folder NVCleanstall extracted). All subfolders are scanned.	Escolha a pasta dos controladores modificados (p. ex. a pasta que o NVCleanstall extraiu). Todas as subpastas s&#xE3;o analisadas.
@@ -6496,6 +6703,15 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, para Windows 10 2004-22H2
 2025-10 is the last Windows 10 update Microsoft allows offline. ESU updates (Nov 2025+) come from Windows Update after setup on enrolled PCs.	2025-10 es la &#xFA;ltima actualizaci&#xF3;n de Windows 10 que Microsoft permite integrar sin conexi&#xF3;n. Las actualizaciones ESU (nov. 2025+) llegan por Windows Update despu&#xE9;s de la instalaci&#xF3;n, en los PC inscritos.
 Find and download updates	Buscar y descargar actualizaciones
 Downloaded	Descargadas
+Windows language packs	Paquetes de idioma de Windows
+1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extraiga un ISO y seleccione ediciones. 2. Importe un CAB de idioma compatible o pegue abajo su enlace directo de Microsoft. 3. Descargue las actualizaciones de Windows y despu&#xE9;s integre. Se comprueban la compilaci&#xF3;n y la arquitectura; los paquetes se a&#xF1;aden a las ediciones seleccionadas antes de las actualizaciones acumulativas. La instalaci&#xF3;n y la recuperaci&#xF3;n conservan su idioma original.
+Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenga paquetes CAB completos para la misma versi&#xF3;n y arquitectura de Windows en los medios de idiomas / Idiomas y caracter&#xED;sticas opcionales de Microsoft. Algunas versiones requieren acceso a medios con licencia; no existe una fuente p&#xFA;blica universal de CAB. Aqu&#xED; no se admiten LXP ni caracter&#xED;sticas a petici&#xF3;n. Los idiomas adicionales aumentan el tama&#xF1;o de la imagen y el tiempo de mantenimiento; el rendimiento tras la instalaci&#xF3;n normalmente no cambia.
+Direct Microsoft CAB URL	URL directo del CAB de Microsoft
+Expected SHA-256 (optional)	SHA-256 esperado (opcional)
+Download and add language pack	Descargar y a&#xF1;adir paquete de idioma
+Import CAB...	Importar CAB...
+Remove selected language pack	Quitar paquete de idioma seleccionado
+Microsoft language-pack sources	Fuentes de paquetes de idioma de Microsoft
 Signed drivers are slipstreamed into install.wim with DISM, so Windows installs them on first boot. Storage and network drivers also go into boot.wim and WinRE, so Setup sees RAID / VMD disks. Modded drivers (edited INF) belong on the next page.	Los controladores firmados se integran en install.wim con DISM, para que Windows los instale en el primer arranque. Los controladores de almacenamiento y de red van tambi&#xE9;n a boot.wim y WinRE, para que el programa de instalaci&#xF3;n vea discos RAID / VMD. Los controladores modificados (INF editado) van en la p&#xE1;gina siguiente.
 Add drivers from this PC	A&#xF1;adir controladores de este PC
 Import a drivers folder	Importar una carpeta de controladores
@@ -6577,6 +6793,15 @@ Clean up now	Limpiar ahora
 Defaults	Valores predeterminados
 Restore default options	Restaurar las opciones predeterminadas
 Open work folder	Abrir la carpeta de trabajo
+Convert Windows image	Convertir imagen de Windows
+Convert Windows ESD Image to WIM Image	Convertir imagen ESD de Windows a WIM
+Convert Windows WIM Image to ESD Image	Convertir imagen WIM de Windows a ESD
+Convert Windows Store ESD Image to WIM Image	Convertir imagen ESD de la Tienda Windows a WIM
+WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage.	WIM: conversi&#xF3;n generalmente m&#xE1;s r&#xE1;pida, archivo mayor y mantenimiento m&#xE1;s sencillo. La instalaci&#xF3;n suele requerir menos descompresi&#xF3;n, pero lee m&#xE1;s datos. ESD: conversi&#xF3;n m&#xE1;s lenta y exigente para la CPU, con archivo menor. La instalaci&#xF3;n lee menos datos, pero puede descomprimir m&#xE1;s despacio. El rendimiento de Windows instalado es igual; la velocidad de instalaci&#xF3;n depende de la CPU y del almacenamiento.
+Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file.	ESD de la Tienda: exporta solo ediciones de Windows, omitiendo los &#xED;ndices de medios, instalaci&#xF3;n y recuperaci&#xF3;n. Los ESD cifrados requieren descifrado previo con una clave leg&#xED;tima. El resultado es una imagen de instalaci&#xF3;n, no un ISO arrancable. Todas las conversiones conservan el origen y requieren un archivo de destino nuevo.
+Source image	Imagen de origen
+Destination image	Imagen de destino
+Convert image	Convertir imagen
 Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed.	Todo lo que falte se descarga autom&#xE1;ticamente cuando un paso lo necesita, en la carpeta tools junto a este archivo. oscdimg.exe viene del servidor de s&#xED;mbolos de Microsoft (comprobado con SHA-256) o del Windows ADK; makecat, Inf2Cat y signtool se extraen de los paquetes NuGet de Microsoft (Windows SDK build tools / Windows Driver Kit). Solo se guardan esas herramientas; no se instala nada.
 Download missing tools now	Descargar ahora las herramientas que faltan
 Open tools folder	Abrir la carpeta de herramientas
@@ -6698,6 +6923,8 @@ SizeGB	Tama&#xF1;o (GB)
 Kind	Tipo
 Date	Fecha
 Title	T&#xED;tulo
+Architecture	Arquitectura
+File	Archivo
 No	N.&#xBA;
 Source	Origen
 Class	Clase
@@ -6723,6 +6950,7 @@ Drivers in {0}	Controladores en {0}
 Drivers built for another architecture than the ISO are unticked and left out.	Los controladores hechos para otra arquitectura distinta de la de la ISO quedan desmarcados y fuera.
 Choose the driver folder first (for example the folder NVCleanstall extracted).	Elija primero la carpeta de los controladores (por ejemplo, la carpeta que extrajo NVCleanstall).
 There are no .inf files in that folder or its subfolders.	No hay archivos .inf en esa carpeta ni en sus subcarpetas.
+Choose a source image and a new destination file.	Elija una imagen de origen y un archivo de destino nuevo.
 Tick at least one edition first.	Marque primero al menos una edici&#xF3;n.
 This media was already slipstreamed on {0}. For a clean result unpack the ISO again (page 1). Slipstream again anyway?	Este medio ya se integr&#xF3; el {0}. Para un resultado limpio, vuelva a extraer la ISO (p&#xE1;gina 1). &#xBF;Integrar de nuevo de todos modos?
 No updates are downloaded (page 3). Continue with drivers and options only?	No hay actualizaciones descargadas (p&#xE1;gina 3). &#xBF;Continuar solo con controladores y opciones?
@@ -6748,6 +6976,7 @@ Use a number from 1 to 8 (or leave it empty for the number of processor cores, u
 Use a number from 1 to 4 (or leave it empty: 2 on 4+ processor cores, 3 on 8+).	Use un n&#xFA;mero del 1 al 4 (o d&#xE9;jelo vac&#xED;o: 2 con 4+ n&#xFA;cleos, 3 con 8+).
 Select a Windows {0} ISO	Seleccione una ISO de Windows {0}
 ISO images	Im&#xE1;genes ISO
+Import a full Windows language-pack CAB	Importar un CAB completo de idioma de Windows
 Select the drivers to remove in the list first (Ctrl+click for several).	Seleccione primero en la lista los controladores que quiere quitar (Ctrl+clic para varios).
 Remove every selected driver?	&#xBF;Quitar todos los controladores seleccionados?
 Pick the modded driver folder (e.g. the folder NVCleanstall extracted). All subfolders are scanned.	Elija la carpeta de los controladores modificados (p. ej. la carpeta que extrajo NVCleanstall). Se analizan todas las subcarpetas.
@@ -6845,6 +7074,15 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, pour Windows 10 2004-22H2
 2025-10 is the last Windows 10 update Microsoft allows offline. ESU updates (Nov 2025+) come from Windows Update after setup on enrolled PCs.	2025-10 est la derni&#xE8;re mise &#xE0; jour de Windows 10 que Microsoft permet d'int&#xE9;grer hors ligne. Les mises &#xE0; jour ESU (nov. 2025+) arrivent par Windows Update apr&#xE8;s l'installation, sur les PC inscrits.
 Find and download updates	Rechercher et t&#xE9;l&#xE9;charger les mises &#xE0; jour
 Downloaded	T&#xE9;l&#xE9;charg&#xE9;es
+Windows language packs	Packs de langues Windows
+1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extrayez un ISO et cochez les &#xE9;ditions. 2. Importez un CAB de langue compatible ou collez son lien direct Microsoft ci-dessous. 3. T&#xE9;l&#xE9;chargez les mises &#xE0; jour Windows, puis int&#xE9;grez. La version et l&#x2019;architecture sont v&#xE9;rifi&#xE9;es ; les packs sont ajout&#xE9;s aux &#xE9;ditions coch&#xE9;es avant les mises &#xE0; jour cumulatives. L&#x2019;installation et la r&#xE9;cup&#xE9;ration conservent leur langue d&#x2019;origine.
+Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenez les packs CAB complets correspondant &#xE0; la version et &#xE0; l&#x2019;architecture de Windows sur les supports de langues / Langues et fonctionnalit&#xE9;s facultatives de Microsoft. Certaines versions n&#xE9;cessitent un acc&#xE8;s &#xE0; des supports sous licence ; il n&#x2019;existe pas de source publique universelle de CAB. Les LXP et fonctionnalit&#xE9;s &#xE0; la demande ne sont pas pris en charge ici. Les langues suppl&#xE9;mentaires augmentent la taille et le temps de maintenance ; les performances apr&#xE8;s installation restent g&#xE9;n&#xE9;ralement identiques.
+Direct Microsoft CAB URL	URL direct du CAB Microsoft
+Expected SHA-256 (optional)	SHA-256 attendu (facultatif)
+Download and add language pack	T&#xE9;l&#xE9;charger et ajouter le pack de langue
+Import CAB...	Importer un CAB...
+Remove selected language pack	Retirer le pack de langue s&#xE9;lectionn&#xE9;
+Microsoft language-pack sources	Sources Microsoft des packs de langues
 Signed drivers are slipstreamed into install.wim with DISM, so Windows installs them on first boot. Storage and network drivers also go into boot.wim and WinRE, so Setup sees RAID / VMD disks. Modded drivers (edited INF) belong on the next page.	Les pilotes sign&#xE9;s sont int&#xE9;gr&#xE9;s dans install.wim avec DISM, pour que Windows les installe au premier d&#xE9;marrage. Les pilotes de stockage et r&#xE9;seau vont aussi dans boot.wim et WinRE, pour que l'installation voie les disques RAID / VMD. Les pilotes modifi&#xE9;s (INF &#xE9;dit&#xE9;) vont sur la page suivante.
 Add drivers from this PC	Ajouter les pilotes de ce PC
 Import a drivers folder	Importer un dossier de pilotes
@@ -6926,6 +7164,15 @@ Clean up now	Nettoyer maintenant
 Defaults	Valeurs par d&#xE9;faut
 Restore default options	Restaurer les options par d&#xE9;faut
 Open work folder	Ouvrir le dossier de travail
+Convert Windows image	Convertir une image Windows
+Convert Windows ESD Image to WIM Image	Convertir une image ESD Windows en WIM
+Convert Windows WIM Image to ESD Image	Convertir une image WIM Windows en ESD
+Convert Windows Store ESD Image to WIM Image	Convertir une image ESD du Windows Store en WIM
+WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage.	WIM : conversion g&#xE9;n&#xE9;ralement plus rapide, fichier plus volumineux et maintenance plus simple. L&#x2019;installation demande souvent moins de d&#xE9;compression, mais lit plus de donn&#xE9;es. ESD : conversion plus lente et exigeante pour le processeur, fichier plus petit. L&#x2019;installation lit moins de donn&#xE9;es, mais peut d&#xE9;compresser plus lentement. Les performances de Windows install&#xE9; restent identiques ; la vitesse d&#x2019;installation d&#xE9;pend du processeur et du stockage.
+Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file.	ESD du Store : exporte uniquement les &#xE9;ditions Windows, en ignorant les index de support, d&#x2019;installation et de r&#xE9;cup&#xE9;ration. Les ESD chiffr&#xE9;s n&#xE9;cessitent un d&#xE9;chiffrement pr&#xE9;alable avec une cl&#xE9; l&#xE9;gitime. Le r&#xE9;sultat est une image d&#x2019;installation, pas un ISO amor&#xE7;able. Toutes les conversions pr&#xE9;servent la source et exigent un nouveau fichier de destination.
+Source image	Image source
+Destination image	Image de destination
+Convert image	Convertir l&#x2019;image
 Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed.	Tout ce qui manque est t&#xE9;l&#xE9;charg&#xE9; automatiquement quand une &#xE9;tape en a besoin, dans le dossier tools &#xE0; c&#xF4;t&#xE9; de ce fichier. oscdimg.exe vient du serveur de symboles de Microsoft (v&#xE9;rifi&#xE9; par SHA-256) ou du Windows ADK ; makecat, Inf2Cat et signtool sont extraits des paquets NuGet de Microsoft (Windows SDK build tools / Windows Driver Kit) - seuls ces outils sont gard&#xE9;s, rien n'est install&#xE9;.
 Download missing tools now	T&#xE9;l&#xE9;charger maintenant les outils manquants
 Open tools folder	Ouvrir le dossier des outils
@@ -7047,6 +7294,8 @@ SizeGB	Taille (Go)
 Kind	Type
 Date	Date
 Title	Titre
+Architecture	Architecture
+File	Fichier
 No	N&#xB0;
 Source	Source
 Class	Classe
@@ -7072,6 +7321,7 @@ Drivers in {0}	Pilotes dans {0}
 Drivers built for another architecture than the ISO are unticked and left out.	Les pilotes con&#xE7;us pour une autre architecture que celle de l'ISO sont d&#xE9;coch&#xE9;s et laiss&#xE9;s de c&#xF4;t&#xE9;.
 Choose the driver folder first (for example the folder NVCleanstall extracted).	Choisissez d'abord le dossier des pilotes (par exemple le dossier extrait par NVCleanstall).
 There are no .inf files in that folder or its subfolders.	Il n'y a pas de fichiers .inf dans ce dossier ni dans ses sous-dossiers.
+Choose a source image and a new destination file.	Choisissez une image source et un nouveau fichier de destination.
 Tick at least one edition first.	Cochez d'abord au moins une &#xE9;dition.
 This media was already slipstreamed on {0}. For a clean result unpack the ISO again (page 1). Slipstream again anyway?	Ce support a d&#xE9;j&#xE0; &#xE9;t&#xE9; int&#xE9;gr&#xE9; le {0}. Pour un r&#xE9;sultat propre, extrayez &#xE0; nouveau l'ISO (page 1). Int&#xE9;grer &#xE0; nouveau quand m&#xEA;me ?
 No updates are downloaded (page 3). Continue with drivers and options only?	Aucune mise &#xE0; jour t&#xE9;l&#xE9;charg&#xE9;e (page 3). Continuer seulement avec les pilotes et les options ?
@@ -7097,6 +7347,7 @@ Use a number from 1 to 8 (or leave it empty for the number of processor cores, u
 Use a number from 1 to 4 (or leave it empty: 2 on 4+ processor cores, 3 on 8+).	Utilisez un nombre de 1 &#xE0; 4 (ou laissez vide : 2 avec 4+ c&#x153;urs, 3 avec 8+).
 Select a Windows {0} ISO	S&#xE9;lectionnez une ISO de Windows {0}
 ISO images	Images ISO
+Import a full Windows language-pack CAB	Importer un CAB complet de langue Windows
 Select the drivers to remove in the list first (Ctrl+click for several).	S&#xE9;lectionnez d'abord dans la liste les pilotes &#xE0; retirer (Ctrl+clic pour plusieurs).
 Remove every selected driver?	Retirer tous les pilotes s&#xE9;lectionn&#xE9;s ?
 Pick the modded driver folder (e.g. the folder NVCleanstall extracted). All subfolders are scanned.	Choisissez le dossier des pilotes modifi&#xE9;s (p. ex. le dossier extrait par NVCleanstall). Tous les sous-dossiers sont analys&#xE9;s.
@@ -7194,6 +7445,15 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	JJJJ-MM, f&#xFC;r Windows 10 2004-
 2025-10 is the last Windows 10 update Microsoft allows offline. ESU updates (Nov 2025+) come from Windows Update after setup on enrolled PCs.	2025-10 ist das letzte Windows 10-Update, das Microsoft offline integrieren l&#xE4;sst. ESU-Updates (ab Nov. 2025) kommen nach der Installation &#xFC;ber Windows Update auf angemeldete PCs.
 Find and download updates	Updates suchen und herunterladen
 Downloaded	Heruntergeladen
+Windows language packs	Windows-Sprachpakete
+1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. ISO entpacken und Editionen ausw&#xE4;hlen. 2. Ein passendes Sprachpaket-CAB importieren oder unten den direkten Microsoft-Link einf&#xFC;gen. 3. Windows-Updates herunterladen und integrieren. Build und Architektur werden gepr&#xFC;ft; die Pakete werden vor kumulativen Updates in die ausgew&#xE4;hlten Editionen integriert. Setup und Wiederherstellung behalten ihre urspr&#xFC;ngliche Sprache.
+Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Vollst&#xE4;ndige CAB-Pakete f&#xFC;r dieselbe Windows-Version und Architektur sind auf Microsoft-Medien f&#xFC;r Sprachpakete / Sprachen und optionale Features erh&#xE4;ltlich. Manche Versionen erfordern Zugang zu lizenzierten Medien; es gibt keine allgemeine &#xF6;ffentliche CAB-Quelle. LXP und Features bei Bedarf werden hier nicht unterst&#xFC;tzt. Zus&#xE4;tzliche Sprachen vergr&#xF6;&#xDF;ern das Abbild und verl&#xE4;ngern die Wartung; die Leistung nach der Installation bleibt meist gleich.
+Direct Microsoft CAB URL	Direkte Microsoft-CAB-URL
+Expected SHA-256 (optional)	Erwarteter SHA-256 (optional)
+Download and add language pack	Sprachpaket herunterladen und hinzuf&#xFC;gen
+Import CAB...	CAB importieren...
+Remove selected language pack	Ausgew&#xE4;hltes Sprachpaket entfernen
+Microsoft language-pack sources	Microsoft-Quellen f&#xFC;r Sprachpakete
 Signed drivers are slipstreamed into install.wim with DISM, so Windows installs them on first boot. Storage and network drivers also go into boot.wim and WinRE, so Setup sees RAID / VMD disks. Modded drivers (edited INF) belong on the next page.	Signierte Treiber werden mit DISM in install.wim integriert, damit Windows sie beim ersten Start installiert. Speicher- und Netzwerktreiber kommen auch in boot.wim und WinRE, damit das Setup RAID-/VMD-Datentr&#xE4;ger sieht. Modifizierte Treiber (bearbeitete INF) geh&#xF6;ren auf die n&#xE4;chste Seite.
 Add drivers from this PC	Treiber dieses PCs hinzuf&#xFC;gen
 Import a drivers folder	Treiberordner importieren
@@ -7275,6 +7535,15 @@ Clean up now	Jetzt bereinigen
 Defaults	Standardwerte
 Restore default options	Standardoptionen wiederherstellen
 Open work folder	Arbeitsordner &#xF6;ffnen
+Convert Windows image	Windows-Abbild konvertieren
+Convert Windows ESD Image to WIM Image	Windows-ESD-Abbild in WIM konvertieren
+Convert Windows WIM Image to ESD Image	Windows-WIM-Abbild in ESD konvertieren
+Convert Windows Store ESD Image to WIM Image	Windows-Store-ESD-Abbild in WIM konvertieren
+WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage.	WIM: meist schnellere Konvertierung, gr&#xF6;&#xDF;ere Datei und einfachere Wartung. Setup ben&#xF6;tigt meist weniger Dekomprimierung, liest aber mehr Daten. ESD: langsamere, rechenintensive Konvertierung und kleinere Datei. Setup liest weniger Daten, dekomprimiert aber m&#xF6;glicherweise langsamer. Die Leistung des installierten Windows bleibt gleich; die Installationsgeschwindigkeit h&#xE4;ngt von CPU und Datentr&#xE4;ger ab.
+Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file.	Store-ESD: exportiert nur Windows-Editionen und &#xFC;berspringt Medien-, Setup- und Wiederherstellungsindizes. Verschl&#xFC;sselte ESDs m&#xFC;ssen vorher mit einem rechtm&#xE4;&#xDF;igen Schl&#xFC;ssel entschl&#xFC;sselt werden. Das Ergebnis ist ein Installationsabbild, kein startf&#xE4;higes ISO. Alle Konvertierungen erhalten die Quelle und erfordern eine neue Zieldatei.
+Source image	Quellabbild
+Destination image	Zielabbild
+Convert image	Abbild konvertieren
 Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed.	Alles Fehlende wird automatisch heruntergeladen, wenn ein Schritt es braucht, in den Ordner tools neben dieser Datei. oscdimg.exe kommt vom Symbolserver von Microsoft (per SHA-256 gepr&#xFC;ft) oder aus dem Windows ADK; makecat, Inf2Cat und signtool werden aus den NuGet-Paketen von Microsoft entnommen (Windows SDK build tools / Windows Driver Kit) - nur diese Werkzeuge werden behalten, nichts wird installiert.
 Download missing tools now	Fehlende Werkzeuge jetzt herunterladen
 Open tools folder	Werkzeugordner &#xF6;ffnen
@@ -7396,6 +7665,8 @@ SizeGB	Gr&#xF6;&#xDF;e (GB)
 Kind	Art
 Date	Datum
 Title	Titel
+Architecture	Architektur
+File	Datei
 No	Nr.
 Source	Quelle
 Class	Klasse
@@ -7421,6 +7692,7 @@ Drivers in {0}	Treiber in {0}
 Drivers built for another architecture than the ISO are unticked and left out.	Treiber f&#xFC;r eine andere Architektur als die der ISO sind nicht angehakt und bleiben drau&#xDF;en.
 Choose the driver folder first (for example the folder NVCleanstall extracted).	W&#xE4;hlen Sie zuerst den Treiberordner (zum Beispiel den Ordner, den NVCleanstall entpackt hat).
 There are no .inf files in that folder or its subfolders.	In diesem Ordner und seinen Unterordnern gibt es keine .inf-Dateien.
+Choose a source image and a new destination file.	W&#xE4;hlen Sie ein Quellabbild und eine neue Zieldatei.
 Tick at least one edition first.	Haken Sie zuerst mindestens eine Edition an.
 This media was already slipstreamed on {0}. For a clean result unpack the ISO again (page 1). Slipstream again anyway?	Dieses Medium wurde bereits am {0} integriert. F&#xFC;r ein sauberes Ergebnis entpacken Sie die ISO erneut (Seite 1). Trotzdem erneut integrieren?
 No updates are downloaded (page 3). Continue with drivers and options only?	Keine Updates heruntergeladen (Seite 3). Nur mit Treibern und Optionen fortfahren?
@@ -7446,6 +7718,7 @@ Use a number from 1 to 8 (or leave it empty for the number of processor cores, u
 Use a number from 1 to 4 (or leave it empty: 2 on 4+ processor cores, 3 on 8+).	Verwenden Sie eine Zahl von 1 bis 4 (oder lassen Sie das Feld leer: 2 bei 4+ Kernen, 3 bei 8+).
 Select a Windows {0} ISO	Eine Windows {0}-ISO ausw&#xE4;hlen
 ISO images	ISO-Abbilder
+Import a full Windows language-pack CAB	Vollst&#xE4;ndiges Windows-Sprachpaket-CAB importieren
 Select the drivers to remove in the list first (Ctrl+click for several).	W&#xE4;hlen Sie zuerst in der Liste die zu entfernenden Treiber (Strg+Klick f&#xFC;r mehrere).
 Remove every selected driver?	Alle ausgew&#xE4;hlten Treiber entfernen?
 Pick the modded driver folder (e.g. the folder NVCleanstall extracted). All subfolders are scanned.	W&#xE4;hlen Sie den Ordner mit den modifizierten Treibern (z. B. den Ordner, den NVCleanstall entpackt hat). Alle Unterordner werden durchsucht.
@@ -7543,6 +7816,15 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, per Windows 10 2004-22H2 
 2025-10 is the last Windows 10 update Microsoft allows offline. ESU updates (Nov 2025+) come from Windows Update after setup on enrolled PCs.	2025-10 &#xE8; l'ultimo aggiornamento di Windows 10 che Microsoft consente di integrare offline. Gli aggiornamenti ESU (nov. 2025+) arrivano da Windows Update dopo l'installazione, sui PC iscritti.
 Find and download updates	Cerca e scarica gli aggiornamenti
 Downloaded	Scaricati
+Windows language packs	Language pack di Windows
+1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Estrarre un ISO e selezionare le edizioni. 2. Importare un CAB della lingua compatibile o incollare sotto il collegamento diretto Microsoft. 3. Scaricare gli aggiornamenti di Windows, poi integrare. Vengono controllate build e architettura; i pacchetti vengono aggiunti alle edizioni selezionate prima degli aggiornamenti cumulativi. Installazione e ripristino mantengono la lingua originale.
+Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Ottenere i pacchetti CAB completi per la stessa versione e architettura di Windows dai supporti Microsoft per lingue / Lingue e funzionalit&#xE0; facoltative. Alcune versioni richiedono accesso a supporti con licenza; non esiste una fonte pubblica universale di CAB. LXP e funzionalit&#xE0; su richiesta non sono supportati qui. Le lingue aggiuntive aumentano le dimensioni e il tempo di manutenzione; le prestazioni dopo l&#x2019;installazione di solito non cambiano.
+Direct Microsoft CAB URL	URL diretto del CAB Microsoft
+Expected SHA-256 (optional)	SHA-256 previsto (facoltativo)
+Download and add language pack	Scarica e aggiungi language pack
+Import CAB...	Importa CAB...
+Remove selected language pack	Rimuovi il language pack selezionato
+Microsoft language-pack sources	Fonti Microsoft per i language pack
 Signed drivers are slipstreamed into install.wim with DISM, so Windows installs them on first boot. Storage and network drivers also go into boot.wim and WinRE, so Setup sees RAID / VMD disks. Modded drivers (edited INF) belong on the next page.	I driver firmati vengono integrati in install.wim con DISM, cos&#xEC; Windows li installa al primo avvio. I driver di archiviazione e di rete vanno anche in boot.wim e WinRE, cos&#xEC; il programma di installazione vede i dischi RAID / VMD. I driver modificati (INF modificato) vanno nella pagina successiva.
 Add drivers from this PC	Aggiungi i driver di questo PC
 Import a drivers folder	Importa una cartella di driver
@@ -7624,6 +7906,15 @@ Clean up now	Pulisci ora
 Defaults	Impostazioni predefinite
 Restore default options	Ripristina le opzioni predefinite
 Open work folder	Apri la cartella di lavoro
+Convert Windows image	Converti immagine Windows
+Convert Windows ESD Image to WIM Image	Converti immagine ESD di Windows in WIM
+Convert Windows WIM Image to ESD Image	Converti immagine WIM di Windows in ESD
+Convert Windows Store ESD Image to WIM Image	Converti immagine ESD di Windows Store in WIM
+WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage.	WIM: conversione generalmente pi&#xF9; rapida, file pi&#xF9; grande e manutenzione pi&#xF9; semplice. L&#x2019;installazione richiede in genere meno decompressione, ma legge pi&#xF9; dati. ESD: conversione pi&#xF9; lenta e impegnativa per la CPU, file pi&#xF9; piccolo. L&#x2019;installazione legge meno dati, ma pu&#xF2; decomprimere pi&#xF9; lentamente. Le prestazioni di Windows installato sono uguali; la velocit&#xE0; di installazione dipende da CPU e archiviazione.
+Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file.	ESD dello Store: esporta solo le edizioni di Windows, saltando gli indici di supporto, installazione e ripristino. Gli ESD crittografati richiedono prima la decrittazione con una chiave legittima. Il risultato &#xE8; un&#x2019;immagine di installazione, non un ISO avviabile. Tutte le conversioni preservano l&#x2019;origine e richiedono un nuovo file di destinazione.
+Source image	Immagine di origine
+Destination image	Immagine di destinazione
+Convert image	Converti immagine
 Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed.	Tutto ci&#xF2; che manca viene scaricato automaticamente quando un passaggio ne ha bisogno, nella cartella tools accanto a questo file. oscdimg.exe viene dal server dei simboli di Microsoft (controllato con SHA-256) o dal Windows ADK; makecat, Inf2Cat e signtool vengono estratti dai pacchetti NuGet di Microsoft (Windows SDK build tools / Windows Driver Kit) - vengono tenuti solo questi strumenti, non viene installato nulla.
 Download missing tools now	Scarica ora gli strumenti mancanti
 Open tools folder	Apri la cartella degli strumenti
@@ -7745,6 +8036,8 @@ SizeGB	Dimensione (GB)
 Kind	Tipo
 Date	Data
 Title	Titolo
+Architecture	Architettura
+File	File
 No	N.
 Source	Origine
 Class	Classe
@@ -7770,6 +8063,7 @@ Drivers in {0}	Driver in {0}
 Drivers built for another architecture than the ISO are unticked and left out.	I driver fatti per un'architettura diversa da quella della ISO non sono spuntati e restano fuori.
 Choose the driver folder first (for example the folder NVCleanstall extracted).	Scegli prima la cartella dei driver (per esempio la cartella estratta da NVCleanstall).
 There are no .inf files in that folder or its subfolders.	Non ci sono file .inf in quella cartella n&#xE9; nelle sue sottocartelle.
+Choose a source image and a new destination file.	Scegliere un&#x2019;immagine di origine e un nuovo file di destinazione.
 Tick at least one edition first.	Spunta prima almeno un'edizione.
 This media was already slipstreamed on {0}. For a clean result unpack the ISO again (page 1). Slipstream again anyway?	Questo supporto &#xE8; gi&#xE0; stato integrato il {0}. Per un risultato pulito estrai di nuovo la ISO (pagina 1). Integrare di nuovo comunque?
 No updates are downloaded (page 3). Continue with drivers and options only?	Nessun aggiornamento scaricato (pagina 3). Continuare solo con driver e opzioni?
@@ -7795,6 +8089,7 @@ Use a number from 1 to 8 (or leave it empty for the number of processor cores, u
 Use a number from 1 to 4 (or leave it empty: 2 on 4+ processor cores, 3 on 8+).	Usa un numero da 1 a 4 (o lascia vuoto: 2 con 4+ core, 3 con 8+).
 Select a Windows {0} ISO	Seleziona una ISO di Windows {0}
 ISO images	Immagini ISO
+Import a full Windows language-pack CAB	Importa un CAB completo della lingua di Windows
 Select the drivers to remove in the list first (Ctrl+click for several).	Seleziona prima nell'elenco i driver da rimuovere (Ctrl+clic per pi&#xF9; di uno).
 Remove every selected driver?	Rimuovere tutti i driver selezionati?
 Pick the modded driver folder (e.g. the folder NVCleanstall extracted). All subfolders are scanned.	Scegli la cartella dei driver modificati (es. la cartella estratta da NVCleanstall). Tutte le sottocartelle vengono analizzate.
@@ -8116,7 +8411,7 @@ function Complete-Work {
 function Set-Busy([bool]$On) {
     $labels = @{ Unpack = (T 'Unpack'); Analyze = (T 'Analyze'); Download = (T 'Download updates'); ScanHost = (T 'Driver scan'); CommitHost = (T 'Copy drivers')
                  ScanFolder = (T 'Folder scan'); CommitImport = (T 'Import drivers'); Sign = (T 'Re-sign drivers'); Service = (T 'Slipstream'); Build = (T 'Build ISO')
-                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check') }
+                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs') }
     $Script:JobLabel = $labels[$Script:JobName]
     if (-not $Script:JobLabel) { $Script:JobLabel = $Script:JobName }
     $Script:U.Pages.IsEnabled = -not $On
@@ -8317,6 +8612,8 @@ function Update-Ui {
 
         # 3 updates
         $U.UpdGrid.ItemsSource = (New-Table @('Kind', 'KB', 'Date', 'Title') @(foreach ($upd in @($S.Updates)) { , @($upd.Kind, $upd.KB, $upd.Date, $upd.Title) })).DefaultView
+
+        $U.LpGrid.ItemsSource = (New-Table @('Language', 'Architecture', 'Build', 'File') @(foreach ($lp in @($S.LanguagePacks | Where-Object { $_ })) { , @($lp.Language, $lp.Arch, $lp.Build, $lp.File) })).DefaultView
 
         # 4 drivers
         $d = @($S.Drivers)
@@ -8596,6 +8893,13 @@ function Invoke-SignClick {
     }
     Start-Work 'Sign' @{ Source = $src; Name = $name; Password = $pw; All = [bool]$Script:U.SignAll.IsChecked }
 }
+function Invoke-ConvertImageClick {
+    $U = $Script:U
+    $mode = if ($U.ConvWimEsd.IsChecked) { 'WimToEsd' } elseif ($U.ConvStoreWim.IsChecked) { 'StoreToWim' } else { 'EsdToWim' }
+    $src = $U.ConvSource.Text.Trim().Trim('"'); $dst = $U.ConvDestination.Text.Trim().Trim('"')
+    if (-not $src -or -not $dst) { Show-Msg (T 'Choose a source image and a new destination file.') 'Warning'; return }
+    Start-Work 'ConvertImage' @{ Source = $src; Destination = $dst; Mode = $mode }
+}
 function Invoke-ServiceClick {
     if (-not (Test-Unpacked)) { return }
     if (@($Script:S.Selected).Count -eq 0) { Show-Msg (T 'Tick at least one edition first.'); $Script:U.Nav2.IsChecked = $true; return }
@@ -8792,6 +9096,19 @@ try {
     $U.EdNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:EdTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-EditionPick })
     # 3 updates
     $U.UpdBtn.Add_Click({ if (Test-Unpacked) { Start-Work 'Download' } })
+    $U.LpDownload.Add_Click({
+        if (Test-Unpacked) { Start-Work 'DownloadLanguage' @{ Url = $Script:U.LpUrl.Text.Trim(); Sha256 = $Script:U.LpHash.Text.Trim() } }
+    })
+    $U.LpImport.Add_Click({
+        if (-not (Test-Unpacked)) { return }
+        $f = Select-File (T 'Import a full Windows language-pack CAB') 'CAB (*.cab)|*.cab' $Script:P.Work
+        if ($f) { Start-Work 'ImportLanguage' @{ File = $f } }
+    })
+    $U.LpRemove.Add_Click({
+        $row = $Script:U.LpGrid.SelectedItem
+        if ($row) { $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
+    })
+    $U.LpHelp.Add_Click({ Start-Process 'https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-language-packs-to-windows' })
     # 4 drivers
     $U.DrvHost.Add_Click({ Invoke-HostDriversClick })
     $U.DrvImport.Add_Click({ Invoke-ImportDriversClick })
@@ -8908,6 +9225,30 @@ try {
         Save-State; Sync-Unattend; Write-Ok 'Answer file fixes undone.'; Update-Ui
     })
     # 9 tools
+    $U.ConvBrowse.Add_Click({
+        $f = Select-File (T 'Source image') 'Windows images (*.esd;*.wim)|*.esd;*.wim' $Script:P.Work
+        if ($f) {
+            $Script:U.ConvSource.Text = $f
+            $ext = if ($Script:U.ConvWimEsd.IsChecked) { '.esd' } else { '.wim' }
+            $Script:U.ConvDestination.Text = Join-Path $Script:P.Output (([IO.Path]::GetFileNameWithoutExtension($f)) + $ext)
+        }
+    })
+    foreach ($rb in @($U.ConvEsdWim, $U.ConvWimEsd, $U.ConvStoreWim)) {
+        $rb.Add_Click({
+            if ($Script:U.ConvDestination.Text) {
+                $ext = if ($Script:U.ConvWimEsd.IsChecked) { '.esd' } else { '.wim' }
+                $Script:U.ConvDestination.Text = [IO.Path]::ChangeExtension($Script:U.ConvDestination.Text, $ext)
+            }
+        })
+    }
+    $U.ConvSave.Add_Click({
+        $d = New-Object Microsoft.Win32.SaveFileDialog
+        $d.Title = T 'Destination image'
+        $d.Filter = if ($Script:U.ConvWimEsd.IsChecked) { 'ESD (*.esd)|*.esd' } else { 'WIM (*.wim)|*.wim' }
+        $d.FileName = $Script:U.ConvDestination.Text
+        if ($d.ShowDialog($Script:W)) { $Script:U.ConvDestination.Text = $d.FileName }
+    })
+    $U.ConvRun.Add_Click({ Invoke-ConvertImageClick })
     $U.ToolsBtn.Add_Click({ Start-Work 'Tools' })
     $U.ToolsOpen.Add_Click({ New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null; Open-Path $ToolsDir })
     # activity panel + run everything

@@ -79,6 +79,24 @@ $Script:XPages = @'
               <TextBlock Style="{StaticResource H2}" Text="Downloaded"/>
               <DataGrid x:Name="UpdGrid" Height="210"/>
             </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Windows language packs"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged."/>
+              <TextBlock Text="Direct Microsoft CAB URL" Margin="0,4"/>
+              <TextBox x:Name="LpUrl"/>
+              <TextBlock Text="Expected SHA-256 (optional)" Margin="0,10,0,4"/>
+              <TextBox x:Name="LpHash"/>
+              <WrapPanel Margin="0,14,0,10">
+                <Button x:Name="LpDownload" Style="{StaticResource Primary}" Content="Download and add language pack"/>
+                <Button x:Name="LpImport" Style="{StaticResource Btn}" Content="Import CAB..."/>
+              </WrapPanel>
+              <DataGrid x:Name="LpGrid" Height="150"/>
+              <WrapPanel Margin="0,10,0,0">
+                <Button x:Name="LpRemove" Style="{StaticResource Btn}" Content="Remove selected language pack"/>
+                <Button x:Name="LpHelp" Style="{StaticResource Btn}" Content="Microsoft language-pack sources"/>
+              </WrapPanel>
+            </StackPanel></Border>
           </StackPanel></ScrollViewer></TabItem>
 
           <!-- 4 drivers -->
@@ -256,6 +274,25 @@ $Script:XPages = @'
           <!-- 9 tools -->
           <TabItem Visibility="Collapsed" Foreground="#E6EAF2"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,18,24,18">
             <TextBlock Style="{StaticResource H1}" Text="Tools"/>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Convert Windows image"/>
+              <RadioButton x:Name="ConvEsdWim" Style="{StaticResource Seg}" GroupName="conversion" IsChecked="True" Margin="0,4" Content="Convert Windows ESD Image to WIM Image"/>
+              <RadioButton x:Name="ConvWimEsd" Style="{StaticResource Seg}" GroupName="conversion" Margin="0,4" Content="Convert Windows WIM Image to ESD Image"/>
+              <RadioButton x:Name="ConvStoreWim" Style="{StaticResource Seg}" GroupName="conversion" Margin="0,4" Content="Convert Windows Store ESD Image to WIM Image"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,10,0,6" Text="WIM: generally quicker conversion, larger output and easier servicing. Setup usually needs less decompression work but reads more data. ESD: slower, CPU-intensive conversion and smaller output. Setup reads less data but may decompress more slowly. Installed Windows performance is the same; actual setup speed depends on CPU and storage."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Store ESD: exports Windows editions only, skipping media, Setup and recovery indexes. Encrypted ESDs need prior decryption with a legitimate key. The result is an install image, not a bootable ISO. All conversions preserve the source and require a new destination file."/>
+              <TextBlock Text="Source image" Margin="0,4"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="ConvSource" Margin="0,0,8,0"/>
+                <Button x:Name="ConvBrowse" Grid.Column="1" Style="{StaticResource Btn}" Content="Browse..." Margin="0"/>
+              </Grid>
+              <TextBlock Text="Destination image" Margin="0,10,0,4"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="ConvDestination" Margin="0,0,8,0"/>
+                <Button x:Name="ConvSave" Grid.Column="1" Style="{StaticResource Btn}" Content="Save as..." Margin="0"/>
+              </Grid>
+              <WrapPanel Margin="0,14,0,0"><Button x:Name="ConvRun" Style="{StaticResource Primary}" Content="Convert image"/></WrapPanel>
+            </StackPanel></Border>
             <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,14" Text="Everything missing is downloaded automatically when a step needs it, into the tools folder next to this file. oscdimg.exe comes from the Microsoft symbol server (SHA-256 checked) or the Windows ADK; makecat, Inf2Cat and signtool are extracted from Microsoft's NuGet packages (Windows SDK build tools / Windows Driver Kit) - only those tools are kept, nothing is installed."/>
             <Border Style="{StaticResource Card}"><StackPanel>
               <Grid>

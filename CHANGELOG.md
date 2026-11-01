@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add ESD to WIM, WIM to ESD and Windows Store ESD to WIM conversions on Tools, with conversion / Setup performance guidance. Preserve sources and existing destinations; verify exported edition counts before publishing the result. Store conversions omit media / WinPE / Setup indexes and explain encrypted-image limitations.
+- Add Windows language-pack CAB import and direct Microsoft HTTPS downloads on Windows updates, optional SHA-256 checks, build / architecture validation, persistent queues and removal. Apply packs to selected Windows editions before cumulative updates in both sequential and parallel servicing; reapply the LCU for language resources. Setup, WinPE and WinRE language packs, LXP and Features on Demand are outside this flow.
+- Refresh image metadata and selected edition indexes after servicing, including newly integrated languages. Keep the existing pages, themes and six interface languages. Add regression coverage for conversion failures, Store indexes, CAB validation, download failures and servicing order.
+
 ## v4.4.0 — 2026-10-31
 
 The ISO check now also handles ISOs made with the **Media Creation Tool**, which can't be checked by SHA-256 because the tool builds the ISO on the PC. When the SHA-256 isn't one Microsoft lists, the Microsoft signatures of the ISO's setup and boot files are checked instead.
