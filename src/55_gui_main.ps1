@@ -79,6 +79,13 @@ function Invoke-SignClick {
     }
     Start-Work 'Sign' @{ Source = $src; Name = $name; Password = $pw; All = [bool]$Script:U.SignAll.IsChecked }
 }
+function Invoke-ConvertImageClick {
+    $U = $Script:U
+    $mode = if ($U.ConvWimEsd.IsChecked) { 'WimToEsd' } elseif ($U.ConvStoreWim.IsChecked) { 'StoreToWim' } else { 'EsdToWim' }
+    $src = $U.ConvSource.Text.Trim().Trim('"'); $dst = $U.ConvDestination.Text.Trim().Trim('"')
+    if (-not $src -or -not $dst) { Show-Msg (T 'Choose a source image and a new destination file.') 'Warning'; return }
+    Start-Work 'ConvertImage' @{ Source = $src; Destination = $dst; Mode = $mode }
+}
 function Invoke-ServiceClick {
     if (-not (Test-Unpacked)) { return }
     if (@($Script:S.Selected).Count -eq 0) { Show-Msg (T 'Tick at least one edition first.'); $Script:U.Nav2.IsChecked = $true; return }
@@ -275,6 +282,19 @@ try {
     $U.EdNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:EdTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-EditionPick })
     # 3 updates
     $U.UpdBtn.Add_Click({ if (Test-Unpacked) { Start-Work 'Download' } })
+    $U.LpDownload.Add_Click({
+        if (Test-Unpacked) { Start-Work 'DownloadLanguage' @{ Url = $Script:U.LpUrl.Text.Trim(); Sha256 = $Script:U.LpHash.Text.Trim() } }
+    })
+    $U.LpImport.Add_Click({
+        if (-not (Test-Unpacked)) { return }
+        $f = Select-File (T 'Import a full Windows language-pack CAB') 'CAB (*.cab)|*.cab' $Script:P.Work
+        if ($f) { Start-Work 'ImportLanguage' @{ File = $f } }
+    })
+    $U.LpRemove.Add_Click({
+        $row = $Script:U.LpGrid.SelectedItem
+        if ($row) { $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
+    })
+    $U.LpHelp.Add_Click({ Start-Process 'https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-language-packs-to-windows' })
     # 4 drivers
     $U.DrvHost.Add_Click({ Invoke-HostDriversClick })
     $U.DrvImport.Add_Click({ Invoke-ImportDriversClick })
@@ -391,6 +411,30 @@ try {
         Save-State; Sync-Unattend; Write-Ok 'Answer file fixes undone.'; Update-Ui
     })
     # 9 tools
+    $U.ConvBrowse.Add_Click({
+        $f = Select-File (T 'Source image') 'Windows images (*.esd;*.wim)|*.esd;*.wim' $Script:P.Work
+        if ($f) {
+            $Script:U.ConvSource.Text = $f
+            $ext = if ($Script:U.ConvWimEsd.IsChecked) { '.esd' } else { '.wim' }
+            $Script:U.ConvDestination.Text = Join-Path $Script:P.Output (([IO.Path]::GetFileNameWithoutExtension($f)) + $ext)
+        }
+    })
+    foreach ($rb in @($U.ConvEsdWim, $U.ConvWimEsd, $U.ConvStoreWim)) {
+        $rb.Add_Click({
+            if ($Script:U.ConvDestination.Text) {
+                $ext = if ($Script:U.ConvWimEsd.IsChecked) { '.esd' } else { '.wim' }
+                $Script:U.ConvDestination.Text = [IO.Path]::ChangeExtension($Script:U.ConvDestination.Text, $ext)
+            }
+        })
+    }
+    $U.ConvSave.Add_Click({
+        $d = New-Object Microsoft.Win32.SaveFileDialog
+        $d.Title = T 'Destination image'
+        $d.Filter = if ($Script:U.ConvWimEsd.IsChecked) { 'ESD (*.esd)|*.esd' } else { 'WIM (*.wim)|*.wim' }
+        $d.FileName = $Script:U.ConvDestination.Text
+        if ($d.ShowDialog($Script:W)) { $Script:U.ConvDestination.Text = $d.FileName }
+    })
+    $U.ConvRun.Add_Click({ Invoke-ConvertImageClick })
     $U.ToolsBtn.Add_Click({ Start-Work 'Tools' })
     $U.ToolsOpen.Add_Click({ New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null; Open-Path $ToolsDir })
     # activity panel + run everything

@@ -13,6 +13,8 @@
 5. **Adds your `autounattend.xml` and `$OEM$` folder**
 6. **Checks everything** before the build: answer file, `$OEM$` scripts and drivers, with one-click fixes
 7. **Builds a bootable BIOS + UEFI ISO**
+8. **Converts ESD / WIM images**, including Windows Store ESD installation editions, from the Tools page
+9. **Downloads or imports Windows language-pack CABs** and integrates them into the selected editions before updates
 
 Missing tools (`oscdimg`, `makecat`, `Inf2Cat`, `signtool`) are downloaded automatically from Microsoft and verified.
 
@@ -61,18 +63,43 @@ The console line at start shows the version (`Starting Windows ISO Updater v3.5.
 |---|------|--------------|
 | 1 | **Source ISO** | Windows 10 or Windows 11 (the choice follows the ISO you unpack), the download link for it, the [ISO check](#original-iso-check) that tells whether the ISO is an original from Microsoft (SHA-256, or the Microsoft signatures of its setup and boot files for one made with the Media Creation Tool), and unpacking the ISO into the work folder with its build, editions, language and architecture |
 | 2 | **Editions** | Tick the editions to update. Unticked ones can be left out, which makes the ISO smaller and the build faster |
-| 3 | **Windows updates** | Finds and downloads the newest LCU, SSU, Safe OS DU, Setup DU, .NET 4.8.1 and .NET CU (SHA-1 checked). Optional .NET 3.5 and `/ResetBase` |
+| 3 | **Windows updates** | Finds and downloads the newest LCU, SSU, Safe OS DU, Setup DU, .NET 4.8.1 and .NET CU (SHA-1 checked). Optional .NET 3.5 and `/ResetBase`; import or download matching Windows language-pack CABs |
 | 4 | **Drivers** | *Add drivers from this PC* (`Export-WindowsDriver`) or *Import a drivers folder* (for example `Drivers-Backup` made by `Drivers.cmd`). All subfolders are scanned, and drivers for the wrong architecture are left out. Older versions of a driver that is there in a newer version too (Windows keeps them in its driver store) are unticked: column *Older* |
 | 5 | **Signed NVIDIA / modded** | Re-signs edited driver packages so Windows accepts them, with the engine you pick: MakeCat, libwdi-style, generate-cat-file or Inf2Cat (see below) |
 | 6 | **Answer file + `$OEM$`** | Your `autounattend.xml` (from [autounattended-generator](https://github.com/j0p3s/autounattended-generator)) and your `$OEM$` folder |
 | ✓ | **Install check** | Finds what would break or stall a clean install, and fixes it |
 | 7 | **Slipstream + build ISO** | Services WinRE, `install.wim` and `boot.wim` (several editions at the same time), then writes the ISO and logs the time of every step. Options: no "press any key", Windows UEFI CA 2023 boot manager, split `install.wim` for FAT32, [speed options](#speed), output file name |
 | | **Options and clean up** | Work folder, **Clean up** (mounted images, temp files, and on request updates, media, ISOs, signed copies, copied drivers, answer file copy, logs — or **Everything**), defaults |
-| | **Tools** | Shows DISM, `oscdimg`, `Inf2Cat`, `signtool`, `makecat` and `curl`, and downloads what is missing |
+| | **Tools** | Shows DISM, `oscdimg`, `Inf2Cat`, `signtool`, `makecat` and `curl`, and downloads what is missing; ESD to WIM, WIM to ESD and Store ESD to WIM conversions |
 
 The **Activity** panel at the bottom shows the live log, a progress bar and what the current job is doing. **Run everything** (left) runs unpack → updates → slipstream → ISO with what you set on each page.
 
 While a job runs, Windows doesn't go to sleep (the screen can still turn off). The taskbar button shows the progress too. If the window is in the background when a job ends or asks a question, the button flashes. It turns red after an error and yellow while a question is waiting.
+
+### Image conversions
+
+On **Tools**, choose **Convert Windows ESD Image to WIM Image**, **Convert Windows WIM Image to ESD Image**, or **Convert Windows Store ESD Image to WIM Image**. Browse for the source, choose a **new** destination file, then press **Convert image**. Every installation edition is exported in source order; Store mode skips media, WinPE and Setup indexes, so installation indexes are renumbered from 1. Check any answer file that refers to image indexes before using a converted Store image.
+
+| Output | Conversion / servicing | Windows installation |
+|---|---|---|
+| WIM (`max` compression) | Usually quicker to create; larger file; supports mounting and servicing | Less decompression work, more data to read |
+| ESD (`recovery` compression) | Slower and CPU intensive; smaller file; export back to WIM before servicing | Fewer bytes to read, more decompression work; can be slower on weak CPUs |
+
+Actual Setup speed depends on the CPU and source / destination storage. **The installed Windows system has the same performance after either conversion**; compression affects distribution and deployment, not the installed files. The log records the actual conversion time and output size.
+
+The source is preserved, existing destinations are refused, and an incomplete export is removed. Allow free space for roughly the uncompressed size of the exported editions. Encrypted Store ESDs must first be decrypted with a legitimate key; this tool does not obtain keys or decrypt them. A Store conversion produces an installation WIM, not bootable setup media. Use matching Windows setup media and the new edition indexes. Conversions create standalone files and do not automatically replace the unpacked ISO's install image.
+
+### Windows language packs
+
+1. Unpack the original ISO on **Source ISO** and tick the target editions on **Editions**.
+2. On **Windows updates → Windows language packs**, use **Import CAB...**, or paste a direct Microsoft HTTPS CAB URL and press **Download and add language pack**. An expected SHA-256 is optional. The pack must be a full Windows language pack for the same release / servicing base build and architecture as every selected edition.
+3. Check the queued languages. Use **Remove selected language pack** to exclude a pack. Download the Windows updates on this page, then **Slipstream** and build the ISO as usual.
+
+Full CAB packs come from Microsoft's language-pack or **Languages and Optional Features** media; see [Microsoft's language-pack documentation](https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-language-packs-to-windows), also linked in the app. Newer releases may require licensed media access. There is no universal public CAB feed: the app downloads a supplied direct link from `download.microsoft.com` or `*.download.windowsupdate.com`, without redirects, and does not scrape or guess links. A mounted Microsoft language-pack ISO can supply CABs through **Import CAB...**.
+
+CAB metadata is checked before queuing. The work folder keeps a copy and SHA-256; missing or modified queued files stop servicing. DISM checks package signatures and applicability during integration, and a rejected package stops the job. The servicing stack goes first, language packs next, then the cumulative update (reapplied even when its build is already installed). A downloaded LCU is required with queued packs to update their language resources. Add languages to fresh media before servicing; unpack the original ISO again to change languages after a slipstream. A different source ISO clears the queue.
+
+This adds Windows display languages to the ticked editions. The base/default language, Windows Setup / WinPE and WinRE keep their original settings. LXP / Store language apps, Features on Demand (speech, handwriting, OCR, etc.) and their dependencies are outside this workflow. The base Windows language must support switching display languages (Home Single Language has licensing restrictions). Extra packs increase image size and servicing time; normal performance after installation is usually unchanged. Copies are stored under `languages` in the work folder and are removed by **Clean up → Everything**.
 
 ### Display and accessibility
 
@@ -370,6 +397,7 @@ python src/build.py
 | `33_engine_check.ps1`, `34_engine_check2.ps1` | install check and its fixes |
 | `32_engine_jobs.ps1` | driver scan / import, answer file, run everything, job entry point for the background worker |
 | `40_gui_xaml.ps1`, `45_gui_dialogs.ps1` | window, pages and dialogs (WPF XAML) |
+| `28_engine_images.ps1` | standalone WIM / ESD conversion, full language-pack CAB metadata, direct Microsoft downloads and the integration queue |
 | `48_gui_lang.ps1`, `lang/*.json`, `lang/keys.py` | interface languages: `T 'English text'` returns the text in the language in use; the tables come from `lang/<code>.json` (built into `Get-LangData`); `keys.py` lists every text and what a language still misses |
 | `50_gui.ps1`, `55_gui_main.ps1` | window logic, background worker, events |
 
@@ -379,7 +407,7 @@ python src/build.py
 pwsh tests/run-tests.ps1
 ```
 
-Fifteen suites (about 575 checks) run the PowerShell part on Linux / macOS with PowerShell 7: catalog parsing (Windows 10 and Windows 11 titles, the 24H2 checkpoint order, the DISM choice), signing with stand-ins for `signtool` / `Inf2Cat` (an NVCleanstall-style untrusted catalog, live Inf2Cat status from a worker runspace, keeping only this PC's INF files, isolated copies with only the edited INF files, an own catalog for an INF whose catalog is shared (NVIDIA's `nv_dispi.cat`) with its encoding kept, several Inf2Cat runs at the same time, the fallback to the whole folder, batched signing, the time estimate), the signing engines with stand-ins for `makecat`, `expand` and WSL (one catalog per folder with every file in it, compressed files expanded, the `.cdf`, the CryptCAT source compiled, the fallback to Inf2Cat, the engine buttons), `$OEM$` assembly, every install check finding and fix, an answer file made by the autounattend generator (`tests/fixtures`, personal data removed), the page refresh with Windows PowerShell 5.1's JSON behaviour simulated (and the taskbar progress), the dark / light theme (XAML conversion, a light color for every color, text contrast) with the text size and font settings, the interface languages (every text translated in every language, placeholders and formats kept, the language in use, switching), a whole slipstream against a stand-in `dism` (boot.wim and WinRE in the background vs. sequential, several editions at the same time — how many at once, the edition order of the new `install.wim`, WinRE in every edition, a failing edition, no background worker — updates the image already has, `boot.wim` in one pass, older driver versions, a failed WinRE update, the driver set, the Defender option, the time per step), the ISO build against a stand-in `oscdimg` (failed build, ISO in use, free space), the download step with a stand-in catalog (the servicing stack lookup running while the other updates download), and the original ISO check (Microsoft's table markup, the built-in list, the SHA-256 against `Get-FileHash`, microsoft.com online and offline, the result kept and not read again, subscription file names, the signatures of the setup and boot files with a stand-in for `Get-AuthenticodeSignature`, mounting the ISO, Media Creation Tool and modified ISOs, page 1 and the question before unpacking). DISM, WPF and real driver installs still need a Windows test run.
+Sixteen suites run the PowerShell part on Linux / macOS with PowerShell 7: catalog parsing (Windows 10 and Windows 11 titles, the 24H2 checkpoint order, the DISM choice), signing with stand-ins for `signtool` / `Inf2Cat` (an NVCleanstall-style untrusted catalog, live Inf2Cat status from a worker runspace, keeping only this PC's INF files, isolated copies with only the edited INF files, an own catalog for an INF whose catalog is shared (NVIDIA's `nv_dispi.cat`) with its encoding kept, several Inf2Cat runs at the same time, the fallback to the whole folder, batched signing, the time estimate), the signing engines with stand-ins for `makecat`, `expand` and WSL (one catalog per folder with every file in it, compressed files expanded, the `.cdf`, the CryptCAT source compiled, the fallback to Inf2Cat, the engine buttons), `$OEM$` assembly, every install check finding and fix, an answer file made by the autounattend generator (`tests/fixtures`, personal data removed), the page refresh with Windows PowerShell 5.1's JSON behaviour simulated (and the taskbar progress), the dark / light theme (XAML conversion, a light color for every color, text contrast) with the text size and font settings, the interface languages (every text translated in every language, placeholders and formats kept, the language in use, switching), a whole slipstream against a stand-in `dism` (boot.wim and WinRE in the background vs. sequential, several editions at the same time — how many at once, the edition order of the new `install.wim`, WinRE in every edition, a failing edition, no background worker — updates the image already has, `boot.wim` in one pass, older driver versions, a failed WinRE update, the driver set, the Defender option, the time per step), the ISO build against a stand-in `oscdimg` (failed build, ISO in use, free space), the download step with a stand-in catalog (the servicing stack lookup running while the other updates download), and the original ISO check (Microsoft's table markup, the built-in list, the SHA-256 against `Get-FileHash`, microsoft.com online and offline, the result kept and not read again, subscription file names, the signatures of the setup and boot files with a stand-in for `Get-AuthenticodeSignature`, mounting the ISO, Media Creation Tool and modified ISOs, page 1 and the question before unpacking). The image suite also covers conversion compression, source preservation, Store index filtering, failed export cleanup, language CAB metadata and hashes, download failures and SSU → language → LCU ordering. DISM, WPF and real driver installs still need a Windows test run.
 
 ---
 

@@ -208,7 +208,7 @@ function Invoke-CleanJob($A) {
     }
     if ($A.Media -and (Test-Path -LiteralPath $Script:P.Media)) {
         Remove-Item -LiteralPath $Script:P.Media -Recurse -Force
-        $Script:S.Unpacked = $false; $Script:S.Serviced = $null; $Script:S.Images = @(); $Script:S.Family = $null; $Script:S.Selected = @(); $Script:S.OemSynced = $false
+        $Script:S.Unpacked = $false; $Script:S.Serviced = $null; $Script:S.Images = @(); $Script:S.Family = $null; $Script:S.Selected = @(); $Script:S.OemSynced = $false; $Script:S.LanguagePacks = @()
         Write-Ok 'Unpacked media deleted.'
     }
     if ($A.Output -and (Test-Path -LiteralPath $Script:P.Output)) {
@@ -232,7 +232,7 @@ function Invoke-CleanJob($A) {
     if ($A.All) {
         # start from scratch: everything this tool keeps in the work folder goes, the state starts empty.
         # Only its own names are deleted - anything else in that folder is left alone.
-        $own = @('media', 'updates', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
+        $own = @('media', 'updates', 'languages', 'drivers', 'signed', 'output', 'temp', 'mnt', 'logs', 'state.json', 'autounattend.xml',
                  'autounattend.original.xml', 'install-check.json', 'defender-exclusion.txt')
         $Script:LogFile = $null
         foreach ($n in $own) {
@@ -306,6 +306,9 @@ function Invoke-Job([string]$Job, $A) {
             'CheckIso'     { $Script:Sync.Result = Test-IsoOriginal ([string]$A.Iso) }
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }
+            'ConvertImage' { Invoke-ImageConversion $A.Source $A.Destination $A.Mode }
+            'ImportLanguage' { Add-LanguagePack $A.File }
+            'DownloadLanguage' { Save-LanguagePack $A.Url $A.Sha256 }
             'Download'     { Invoke-Download -Auto }
             'ScanHost'     { $Script:Sync.Result = @(Get-HostDriverScan) }
             'CommitHost'   { Save-HostDrivers $A.Pick }

@@ -160,11 +160,16 @@ function Add-EditionUpdates([string]$MountDir, $Upd, [string]$Fu, [string]$LcuTi
     $t = Get-Date
     foreach ($x in @($Upd.SSU)) { Set-SideLabel "$Part servicing stack"; Add-Pkg $MountDir $x 'Servicing stack' -Soft }
     if (@($Upd.SSU).Count) { Add-Timing $Times $Part 'servicing stack' $t }
+    $t = Get-Date
+    Add-QueuedLanguagePacks $MountDir
+    if (@($Script:S.LanguagePacks).Count) { Add-Timing $Times $Part 'language packs' $t }
     $t = Get-Date; $done = 0
     foreach ($x in @($Upd.LCU)) {
-        if ($LcuBuild -and (Test-UpdateInImage $LcuBuild[$x] $ImgVersion)) { Write-Sub "Cumulative update : $(Split-Path $x -Leaf) - this edition is already at build $ImgVersion, skipped"; continue }
+        if (-not @($Script:S.LanguagePacks).Count -and $LcuBuild -and (Test-UpdateInImage $LcuBuild[$x] $ImgVersion)) { Write-Sub "Cumulative update : $(Split-Path $x -Leaf) - this edition is already at build $ImgVersion, skipped"; continue }
         Set-SideLabel "$Part cumulative update"
-        try { Add-Pkg $MountDir $x 'Cumulative update' -IgnoreHex @('800F081E') }
+        $ignore = @()
+        if (-not @($Script:S.LanguagePacks).Count) { $ignore = @('800F081E') }
+        try { Add-Pkg $MountDir $x 'Cumulative update' -IgnoreHex $ignore }
         catch { Write-Err $LcuTip; throw }
         $done++
     }
@@ -550,7 +555,13 @@ function Invoke-Service([switch]$Auto) {
         Write-Warn "This media was already serviced on $($S.Serviced.When). For a clean result unpack the ISO again (step 1)."
         if (-not (Read-YesNo 'Service it again anyway?' $false)) { return }
     }
+    Test-QueuedLanguagePacks
+    if (@($S.LanguagePacks).Count -and $S.Serviced) { throw 'Language packs need fresh media. Unpack the original ISO before slipstreaming again.' }
     $upd = Get-UpdateFiles
+    if (@($S.LanguagePacks).Count) {
+        Write-Info 'Language packs are added to ticked Windows editions before cumulative updates. Setup/WinPE and WinRE languages are unchanged.'
+        if (-not @($upd.LCU).Count) { throw 'Download a matching cumulative update before integrating language packs, so its language resources can be applied too.' }
+    }
     $Script:Dism = Get-ServicingDism ([int]$S.Family.Build) -Install       # a newer DISM for Windows 11 on a Windows 10 PC
     if ($Script:Dism -match '(?i)Assessment and Deployment Kit') { Write-Info "DISM of the Windows ADK: $($Script:Dism)" }
     $updCount = 0; foreach ($k in $upd.Keys) { $updCount += @($upd[$k]).Count }
@@ -755,6 +766,8 @@ function Invoke-Service([switch]$Auto) {
         Boot2023 = $b2023
         Updates  = @($S.Updates | ForEach-Object { $_.KB })
     }
+    $S.Images = @($newList)
+    $S.Selected = @(for ($j = 0; $j -lt $exportIdx.Count; $j++) { if ($S.Selected -contains $exportIdx[$j]) { $j + 1 } })
     $S.Iso = $null
     Save-State
     Remove-Item -LiteralPath $P.Temp -Recurse -Force -ErrorAction SilentlyContinue
