@@ -1,5 +1,30 @@
 # Changelog
 
+## v4.6.0 — 2026-11-02
+
+Automatic language-pack downloads for the ISO you are building. Choose the extra languages once; the app detects the Windows servicing base and architecture, fetches the matching packs and converts ESD packages into integration CABs when needed.
+
+**Upgrading from 4.5:** download `Windows-ISO-updater-GUI_v4.6.0.cmd` and delete the older `.cmd`. Your settings, signing certificate and work folder are kept. The new language list starts unticked; select only the languages you need on Windows updates. Existing CAB imports and direct Microsoft download links remain available.
+
+### Added — automatic Windows language packs
+- **Language selection on Windows updates**, with 38 regional language choices, Tick all / Tick none and Download selected language packs. Saved selections are also fetched automatically by Download updates, Slipstream and Run everything. No manual update IDs, version / architecture selection or download URLs are required for registered sources.
+- **Detect the source from the selected ISO editions**, using the servicing-base / architecture table in the supplied `win10_11lp.ps1` v2.13 reference. Reject mixed bases or architectures; unregistered versions retain the manual CAB workflow. Source discovery does not extend the existing Windows update / servicing support matrix.
+- **Match the complete language region**, keeping packs such as French (France) and French (Canada) distinct. Select the full Windows client display-language package instead of optional speech, OCR, handwriting or LXP packages.
+- **Download directly from allowed Microsoft hosts over HTTPS**, using UUP dump package metadata. Verify expected byte count and SHA-1 before caching; validate the downloaded package's language, base build and architecture before queuing. Missing or changed queued files are repaired from verified payloads or downloaded again. Already installed languages and verified queued packs do not cause repeat downloads.
+- **ESD-to-CAB conversion inside the app.** Apply the ESD with DISM, expand compressed component manifests, then create the CAB. The ESD2CAB support tools are obtained on demand from an immutable upstream revision and checked against pinned SHA-256 hashes. Their attribution remains beside the tools; no conversion binaries are bundled in the repository. Source ESDs are preserved and temporary / incomplete output is removed on failure.
+
+### Changed — ISO workflow
+- Apply language packs after the servicing stack and before cumulative updates in sequential and parallel servicing. A matching downloaded LCU is still required and reapplied for language resources.
+- Record the languages and editions serviced. Building the ISO stops when a requested language has not been integrated into the selected editions, including after the edition selection changes.
+- Unticking a language removes its automatic queue entry without discarding unrelated manual imports. Removing a queued language also clears its automatic selection. To change languages in an already serviced image, unpack the original ISO again.
+- Keep the existing pages, themes and six interface languages; all new control text is translated. Setup / WinPE, WinRE, the default Windows language and optional language features remain outside this display-language workflow.
+- Update the application version, generated single-file `.cmd`, README, bug-report form, security / download documentation and changelog for 4.6.0. The release includes the app, its SHA-256 and GitHub source archives.
+
+### Code and validation
+- New `src/26_engine_language_download.ps1` and `tests/automatic-languages.tests.ps1`, using the provided script as a reference rather than executing or bundling it.
+- **18 automated suites / 698 checks pass**, including 45 new checks for source / region matching, hashes, caching, pinned tools, conversion failures, settings and ISO build requirements. The generated app remains reproducible, ASCII and CRLF.
+- The UUP API currently refuses live requests from the development environment (HTTP 403). Native Windows download / conversion and WPF smoke testing remain pending; no service block was bypassed.
+
 ## v4.5.0 — 2026-11-01
 
 In-app Windows 10 / 11 downloads through UUP dump, ESD / WIM conversions and Windows language-pack integration, using the existing pages, themes and six interface languages.

@@ -32,7 +32,7 @@ def edit(text, old, new, count=1):
 # ---- kept regions of the v1 engine -----------------------------------------
 settings = rng(162, 353)          # settings/state + process/DISM helpers
 settings = edit(settings, "        LastDriverFolder = ''\n",
-                "        LastDriverFolder = ''\n        SignCleanup      = $true\n        InstallOemDrivers = $false\n        SignOnlyThisPc   = $false\n        WinVersion       = '10'\n        UiTheme          = 'Dark'\n        UiZoom           = 100\n        UiFont           = 'Segoe UI'\n        SignIsolate      = $true\n        SignJobs         = 0\n        SignEngine       = 'makecat'\n        UiLanguage       = 'auto'\n        ParallelBoot     = $true\n        ParallelEditions = 0\n        BootSkipPE       = $false\n        DefenderExclude  = $false\n")
+                "        LastDriverFolder = ''\n        SignCleanup      = $true\n        InstallOemDrivers = $false\n        SignOnlyThisPc   = $false\n        WinVersion       = '10'\n        UiTheme          = 'Dark'\n        UiZoom           = 100\n        UiFont           = 'Segoe UI'\n        SignIsolate      = $true\n        SignJobs         = 0\n        SignEngine       = 'makecat'\n        UiLanguage       = 'auto'\n        ParallelBoot     = $true\n        ParallelEditions = 0\n        BootSkipPE       = $false\n        DefenderExclude  = $false\n        LanguageDownloads = @()\n")
 settings = edit(settings, "        Output   = Join-Path $w 'output'\n",
                 "        Output   = Join-Path $w 'output'\n        Signed   = Join-Path $w 'signed'\n        Scratch  = Join-Path $w 'temp\\scratch'\n")
 # servicing commands use a scratch folder inside the work folder (covered by the Defender option)
@@ -136,7 +136,7 @@ def known_iso_hashes():
 
 engine = '\n\n'.join([
     part('10_engine_head.ps1'),
-    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'), part('28_engine_images.ps1'), part('27_engine_uup.ps1'),
+    settings, detect_catalog, unpack, part('38_engine_windows.ps1'), part('37_engine_download.ps1'), part('28_engine_images.ps1'), part('27_engine_uup.ps1'), part('26_engine_language_download.ps1'),
     part('29_engine_isocheck.ps1'), known_iso_hashes(),
     drivers_a, drivers_b, '#endregion', unattend, part('35_engine_service.ps1'), part('36_engine_build.ps1'),
     part('30_engine_tools.ps1'), part('31_engine_sign.ps1'), part('39_engine_catalogs.ps1'), part('33_engine_check.ps1'), part('34_engine_check2.ps1'), part('32_engine_jobs.ps1'),

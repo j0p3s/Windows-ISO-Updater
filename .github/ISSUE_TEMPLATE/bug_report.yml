@@ -10,8 +10,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: First console line when it starts, e.g. "Starting Windows ISO Updater v4.5.0 ..."
-      placeholder: v4.5.0
+      description: First console line when it starts, e.g. "Starting Windows ISO Updater v4.6.0 ..."
+      placeholder: v4.6.0
     validations:
       required: true
   - type: input
@@ -34,6 +34,7 @@ body:
         - 1 Source ISO
         - 2 Editions
         - 3 Windows updates
+        - Automatic language packs / ESD-to-CAB
         - 4 Drivers
         - 5 Signed NVIDIA / modded
         - 6 Answer file + $OEM$

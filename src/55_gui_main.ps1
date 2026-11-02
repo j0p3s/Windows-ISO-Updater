@@ -146,6 +146,7 @@ function Invoke-RunAllClick {
     $yes = T 'yes'; $no = T 'no'
     $lines = @((T 'Source: {0}') -f (Split-Path $iso -Leaf))
     $lines += (T 'Editions: {0}') -f $(if (@($Script:S.Selected).Count) { (T '{0} ticked') -f @($Script:S.Selected).Count } else { T 'asked after unpacking' })
+    $lines += (T 'Automatic language downloads: {0}') -f (@($Script:Cfg.LanguageDownloads | Where-Object { $_ }) -join ', ')
     $lines += (T 'Drivers: {0}   Signed packages: {1}') -f @($Script:S.Drivers).Count, @($Script:S.Signed | Where-Object { $_ }).Count
     $lines += (T 'Answer file: {0}   $OEM$: {1}') -f $(if ($Script:S.Unattend) { $yes } else { $no }), $(if ($Script:S.Oem) { $yes } else { $no })
     if (-not (Confirm-Ui ((T 'Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.') + "`n`n" + ($lines -join "`n")))) { return }
@@ -323,6 +324,10 @@ try {
     $U.EdNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:EdTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-EditionPick })
     # 3 updates
     $U.UpdBtn.Add_Click({ if (Test-Unpacked) { Start-Work 'Download' } })
+    $U.LpAutoGrid.Add_AutoGeneratingColumn({ param($s, $e) if ($e.PropertyName -eq 'Use') { $e.Cancel = $true } else { $e.Column.IsReadOnly = $true } })
+    $U.LpAutoAll.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:LpAutoTable.Rows) { $r['Use'] = $true }; $Script:Loading = $false; Save-LanguageDownloadPick })
+    $U.LpAutoNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:LpAutoTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-LanguageDownloadPick })
+    $U.LpAutoDownload.Add_Click({ if (Test-Unpacked) { Start-Work 'AutoLanguages' } })
     $U.LpDownload.Add_Click({
         if (Test-Unpacked) { Start-Work 'DownloadLanguage' @{ Url = $Script:U.LpUrl.Text.Trim(); Sha256 = $Script:U.LpHash.Text.Trim() } }
     })
@@ -333,7 +338,7 @@ try {
     })
     $U.LpRemove.Add_Click({
         $row = $Script:U.LpGrid.SelectedItem
-        if ($row) { $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
+        if ($row) { $Script:Cfg.LanguageDownloads = @($Script:Cfg.LanguageDownloads | Where-Object { $_ -ine [string]$row['Language'] }); Save-Settings; $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
     })
     $U.LpHelp.Add_Click({ Start-Process 'https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-language-packs-to-windows' })
     # 4 drivers

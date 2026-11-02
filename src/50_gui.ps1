@@ -289,7 +289,7 @@ function Complete-Work {
 function Set-Busy([bool]$On) {
     $labels = @{ Unpack = (T 'Unpack'); Analyze = (T 'Analyze'); Download = (T 'Download updates'); ScanHost = (T 'Driver scan'); CommitHost = (T 'Copy drivers')
                  ScanFolder = (T 'Folder scan'); CommitImport = (T 'Import drivers'); Sign = (T 'Re-sign drivers'); Service = (T 'Slipstream'); Build = (T 'Build ISO')
-                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
+                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); AutoLanguages = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
     $Script:JobLabel = $labels[$Script:JobName]
     if (-not $Script:JobLabel) { $Script:JobLabel = $Script:JobName }
     $Script:U.Pages.IsEnabled = -not $On
@@ -491,7 +491,8 @@ function Update-Ui {
         # 3 updates
         $U.UpdGrid.ItemsSource = (New-Table @('Kind', 'KB', 'Date', 'Title') @(foreach ($upd in @($S.Updates)) { , @($upd.Kind, $upd.KB, $upd.Date, $upd.Title) })).DefaultView
 
-        $U.LpGrid.ItemsSource = (New-Table @('Language', 'Architecture', 'Build', 'File') @(foreach ($lp in @($S.LanguagePacks | Where-Object { $_ })) { , @($lp.Language, $lp.Arch, $lp.Build, $lp.File) })).DefaultView
+        Update-AutomaticLanguagesUi
+        Update-LanguagePackQueue
 
         # 4 drivers
         $d = @($S.Drivers)
@@ -611,11 +612,36 @@ function Update-Tools {
     $cat = switch ($eng) { 'inf2cat' { $inf } 'makecat' { $mkc } default { $true } }
     $U.ToolsDot.Text = if ($osc -and $cat -and $sig) { '' } else { [string][char]0x25CF }
 }
+function Update-LanguagePackQueue {
+    $Script:U.LpGrid.ItemsSource = (New-Table @('Language', 'Architecture', 'Build', 'File') @(foreach ($lp in @($Script:S.LanguagePacks | Where-Object { $_ })) { , @($lp.Language, $lp.Arch, $lp.Build, $lp.File) })).DefaultView
+}
+function Save-LanguageDownloadPick {
+    $codes = @(foreach ($row in $Script:LpAutoTable.Rows) { if ($row['Use'] -eq $true) { [string]$row['Code'] } })
+    $Script:Cfg.LanguageDownloads = $codes
+    $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_ -and ($_.Source -ne 'uup-language' -or $_.Language -in $codes) })
+    Save-Settings; Save-State
+    Update-LanguagePackQueue
+}
+function Update-AutomaticLanguagesUi {
+    $wanted = @($Script:Cfg.LanguageDownloads)
+    $Script:LpAutoTable = New-Table @('Use:bool', 'Language', 'Code') @(foreach ($l in (Get-AutomaticLanguageList)) { , @(($l.Code -in $wanted), $l.Language, $l.Code) })
+    $Script:LpAutoTable.add_ColumnChanged({ param($sender, $ev) if (-not $Script:Loading -and $ev.Column.ColumnName -eq 'Use') { Save-LanguageDownloadPick } })
+    $Script:U.LpAutoGrid.ItemsSource = $Script:LpAutoTable.DefaultView
+    $Script:U.LpAutoTarget.Text = T 'Unpack an ISO and tick editions to detect the language-pack source.'
+    if ($Script:S.Unpacked -and @($Script:S.Selected).Count) {
+        try {
+            $target = Get-AutomaticLanguageTarget
+            $Script:U.LpAutoTarget.Text = (T 'Detected language-pack source: build {0} / {1}') -f $target.Build, $target.Arch
+        } catch { $Script:U.LpAutoTarget.Text = T 'Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.' }
+    }
+}
 function Save-EditionPick {
     $sel = @(foreach ($r in $Script:EdTable.Rows) { if ($r['Use'] -eq $true) { [int]$r['Index'] } })
     $Script:S.Selected = $sel
     Save-State
     Update-Status
+    $Script:Loading = $true
+    try { Update-AutomaticLanguagesUi } finally { $Script:Loading = $false }
 }
 # Page 5: the signing engine buttons and what the chosen engine does.
 function Update-SignEngine {

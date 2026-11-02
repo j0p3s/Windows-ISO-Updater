@@ -555,6 +555,7 @@ function Invoke-Service([switch]$Auto) {
         Write-Warn "This media was already serviced on $($S.Serviced.When). For a clean result unpack the ISO again (step 1)."
         if (-not (Read-YesNo 'Service it again anyway?' $false)) { return }
     }
+    Invoke-AutomaticLanguageDownloads
     Test-QueuedLanguagePacks
     if (@($S.LanguagePacks).Count -and $S.Serviced) { throw 'Language packs need fresh media. Unpack the original ISO before slipstreaming again.' }
     $upd = Get-UpdateFiles
@@ -764,10 +765,12 @@ function Invoke-Service([switch]$Auto) {
         Build    = $newList[0].Version
         Editions = @($newList | ForEach-Object { "$($_.Name) ($($_.Version))" })
         Boot2023 = $b2023
+        LanguagePacks = @($S.LanguagePacks | Where-Object { $_ } | ForEach-Object { $_.Language })
         Updates  = @($S.Updates | ForEach-Object { $_.KB })
     }
     $S.Images = @($newList)
     $S.Selected = @(for ($j = 0; $j -lt $exportIdx.Count; $j++) { if ($S.Selected -contains $exportIdx[$j]) { $j + 1 } })
+    $S.Serviced.LanguageEditions = @($S.Selected)
     $S.Iso = $null
     Save-State
     Remove-Item -LiteralPath $P.Temp -Recurse -Force -ErrorAction SilentlyContinue

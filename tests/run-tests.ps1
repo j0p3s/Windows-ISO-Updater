@@ -21,6 +21,7 @@ $body = Join-Path $here 'v2body.ps1'
 if (Get-Command chmod -ErrorAction SilentlyContinue) { chmod +x @('inf2cat', 'signtool', 'dism', 'makecat', 'expand', 'wsl', 'wslpath' | ForEach-Object { Join-Path $here "fake/$_" }) }
 
 $suites = @(
+    @{ File = 'automatic-languages.tests.ps1';   Args = @() }                   # automatic ISO language matching, verified downloads, ESD-to-CAB and build guard
     @{ File = 'uup.tests.ps1';                   Args = @() }                   # UUP metadata, safe packages, conversion, ISO output and failures
     @{ File = 'images.tests.ps1';                Args = @() }                   # conversions, Store indexes, language CABs and update ordering
     @{ File = 'engine-catalog.tests.ps1';        Args = @('-Engine', $body) }   # catalog parsing, families, state (v1 engine)

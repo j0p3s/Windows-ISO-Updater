@@ -105,8 +105,17 @@ $Script:XPages = @'
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>
               <TextBlock Style="{StaticResource H2}" Text="Windows language packs"/>
-              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language."/>
-              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required."/>
+              <TextBlock x:Name="LpAutoTarget" Style="{StaticResource Sub}" Margin="0,0,0,10"/>
+              <WrapPanel Margin="0,0,0,10"><Button x:Name="LpAutoAll" Style="{StaticResource Btn}" Content="Tick all"/><Button x:Name="LpAutoNone" Style="{StaticResource Btn}" Content="Tick none"/></WrapPanel>
+              <DataGrid x:Name="LpAutoGrid" Height="230" IsReadOnly="False">
+                <DataGrid.Columns>
+                  <DataGridTemplateColumn Header="Use" Width="54"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Use, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Cursor="Hand"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                </DataGrid.Columns>
+              </DataGrid>
+              <Button x:Name="LpAutoDownload" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,12,0,10" Content="Download selected language packs"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,12" Text="Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time."/>
+              <TextBlock Style="{StaticResource H2}" Text="Advanced: direct CAB download or import"/>
               <TextBlock Text="Direct Microsoft CAB URL" Margin="0,4"/>
               <TextBox x:Name="LpUrl"/>
               <TextBlock Text="Expected SHA-256 (optional)" Margin="0,10,0,4"/>

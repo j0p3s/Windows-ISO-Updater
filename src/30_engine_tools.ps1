@@ -15,7 +15,7 @@ function Push-ExeLine([string]$Line) {
     $col = if ($t -match '^(Error|ERROR)') { 'Red' } elseif ($t -match '^(Warning|WARNING)') { 'Yellow' } else { 'DarkGray' }
     Write-Host "       $t" -ForegroundColor $col
 }
-function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr) {
+function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr, [string]$WorkingDirectory) {
     Add-Log "EXEC $File $Arguments"
     $psi = New-Object Diagnostics.ProcessStartInfo
     if ($MergeErr) {
@@ -27,6 +27,7 @@ function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr) {
         $psi.RedirectStandardError = $true
     }
     $psi.UseShellExecute = $false
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
     $psi.RedirectStandardOutput = $true
     $psi.CreateNoWindow = $true
     $p = [Diagnostics.Process]::Start($psi)

@@ -108,6 +108,7 @@ function Get-UpdateFiles {
 # Windows supports servicing an image only with a DISM of the same or a newer Windows. Builds that share
 # one code base count as one (Windows 10 2004-22H2, Windows 11 22H2 / 23H2, 24H2 / 25H2).
 function Get-BaseBuild([int]$Build) {
+    if ($Build -ge 18362 -and $Build -le 18363) { return 18362 }
     if ($Build -ge 26100 -and $Build -le 26200) { return 26100 }
     if ($Build -ge 22621 -and $Build -le 22631) { return 22621 }
     if ($Build -ge 19041 -and $Build -le 19045) { return 19041 }

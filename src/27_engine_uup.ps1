@@ -6,10 +6,10 @@ function Assert-UupId([string]$Id) {
     if ($Id -notmatch '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$') { throw 'Choose a valid UUP dump build first.' }
 }
 function Invoke-UupApi([string]$Method, $Values) {
-    if ($Method -notin 'listid', 'listlangs', 'listeditions') { throw 'Unsupported UUP dump API request.' }
+    if ($Method -notin 'listid', 'listlangs', 'listeditions', 'get') { throw 'Unsupported UUP dump API request.' }
     $url = 'https://api.uupdump.net/' + $Method + '.php?' + (New-UupQuery $Values)
     try { $r = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 60 -ErrorAction Stop }
-    catch { throw "UUP dump could not be reached or refused the request. Try again later or open uupdump.net; no ISO was created. $($_.Exception.Message)" }
+    catch { throw "UUP dump could not be reached or refused the request. Try again later or open uupdump.net; the download was not completed. $($_.Exception.Message)" }
     if (-not $r.response -or $r.response.error) { throw "UUP dump returned an error: $($r.response.error). Try another build or try again later." }
     return $r.response
 }

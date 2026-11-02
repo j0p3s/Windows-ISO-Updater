@@ -1,6 +1,6 @@
 @echo off
 :: ===========================================================================
-::  Windows-ISO-updater-GUI_v4.5.0.cmd  -  one file, graphical interface
+::  Windows-ISO-updater-GUI_v4.6.0.cmd  -  one file, graphical interface
 ::  Windows ISO Updater: the file name carries the version (vX.X.X).
 ::  - unpacks a Windows 10 or Windows 11 ISO and detects its build
 ::  - downloads its updates from the Microsoft Update Catalog
@@ -26,7 +26,7 @@ exit /b
 
 :admin_ok
 set "W10U_SELF=%~f0"
-echo Starting Windows ISO Updater v4.5.0 ...  (this window hides when the program opens)
+echo Starting Windows ISO Updater v4.6.0 ...  (this window hides when the program opens)
 "%PSEXE%" -NoProfile -STA -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:W10U_SELF);$i=$t.IndexOf('#'+'PS-BEGIN');Invoke-Expression $t.Substring($i)"
 if errorlevel 1 pause
 exit /b
@@ -42,7 +42,7 @@ $ProgressPreference    = 'SilentlyContinue'
 
 $Script:AppName      = 'Windows-ISO-Updater'
 $Script:AppTitle     = 'Windows ISO Updater'
-$Script:AppVersion   = '4.5.0'
+$Script:AppVersion   = '4.6.0'
 $Script:Root         = Split-Path -Parent $env:W10U_SELF
 $ToolsDir            = Join-Path $Script:Root 'tools'
 $IsoPath             = $null
@@ -150,6 +150,7 @@ function Get-DefaultSettings {
         ParallelEditions = 0
         BootSkipPE       = $false
         DefenderExclude  = $false
+        LanguageDownloads = @()
     }
 }
 function Import-Settings {
@@ -669,6 +670,7 @@ function Get-UpdateFiles {
 # Windows supports servicing an image only with a DISM of the same or a newer Windows. Builds that share
 # one code base count as one (Windows 10 2004-22H2, Windows 11 22H2 / 23H2, 24H2 / 25H2).
 function Get-BaseBuild([int]$Build) {
+    if ($Build -ge 18362 -and $Build -le 18363) { return 18362 }
     if ($Build -ge 26100 -and $Build -le 26200) { return 26100 }
     if ($Build -ge 22621 -and $Build -le 22631) { return 22621 }
     if ($Build -ge 19041 -and $Build -le 19045) { return 19041 }
@@ -768,6 +770,7 @@ function Find-UpdateJob($Ctx) {
 }
 function Invoke-Download([switch]$Auto) {
     Assert-Analyzed
+    Invoke-AutomaticLanguageDownloads
     $f = $Script:S.Family
     Write-Title "Download updates - $($f.Name) $($f.Arch)"
     if (-not $f.Supported) { throw "$($f.Name) is not supported for automatic updates." }
@@ -998,10 +1001,10 @@ function Assert-UupId([string]$Id) {
     if ($Id -notmatch '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$') { throw 'Choose a valid UUP dump build first.' }
 }
 function Invoke-UupApi([string]$Method, $Values) {
-    if ($Method -notin 'listid', 'listlangs', 'listeditions') { throw 'Unsupported UUP dump API request.' }
+    if ($Method -notin 'listid', 'listlangs', 'listeditions', 'get') { throw 'Unsupported UUP dump API request.' }
     $url = 'https://api.uupdump.net/' + $Method + '.php?' + (New-UupQuery $Values)
     try { $r = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 60 -ErrorAction Stop }
-    catch { throw "UUP dump could not be reached or refused the request. Try again later or open uupdump.net; no ISO was created. $($_.Exception.Message)" }
+    catch { throw "UUP dump could not be reached or refused the request. Try again later or open uupdump.net; the download was not completed. $($_.Exception.Message)" }
     if (-not $r.response -or $r.response.error) { throw "UUP dump returned an error: $($r.response.error). Try another build or try again later." }
     return $r.response
 }
@@ -1202,6 +1205,198 @@ function Invoke-UupDownload($Choice) {
     Write-Ok "Bootable Windows ISO ready: $target"
     Write-Info 'This ISO was assembled locally from UUP files. It will not match a Microsoft-published ISO hash. Select Unpack and analyze to use it.'
     return $meta
+}
+#endregion
+
+#region ---------------------------------------------------------------- Automatic language packs
+# Update IDs and language set are based on the user-supplied win10_11lp.ps1 v2.13.
+# These are servicing-base sources; the downloaded package manifest must still match the ISO.
+function Get-LanguageDownloadSources {
+    return @'
+Build,Arch,Id
+28000,x64,0e1cec91-9bb2-41ad-929f-fe36a5beda02
+28000,arm64,02242beb-9b26-4445-b9b8-978df2430b1c
+26100,x64,82bfaf56-2ef9-49ce-89fa-daa9c9eaff11
+26100,arm64,294aa40d-f466-4071-8654-d952a9a68ac1
+22621,x64,356c1621-04e7-4e66-8928-03a687c3db73
+22621,arm64,8c9cea2a-b4d5-49dd-82c4-f79bfac1108e
+22000,x64,6cc7ea68-b7fb-4de1-bf9b-1f43c6218f6f
+22000,arm64,a1b78728-530f-443f-b672-d742e7c14bcb
+19041,x64,3ead9b43-aa9d-4973-8195-24be0b0ce1e1
+19041,x86,70f4293c-6eaa-4db5-b059-9755ab5628d8
+19041,arm64,bb720c43-af68-4dc6-a397-42f278183314
+18362,x64,71cd47f8-e9b2-422b-b289-103a76016851
+18362,x86,fe1f4dc3-a596-495d-ad9a-810da62d7ddc
+18362,arm64,3d401b52-605e-4f68-9f85-9b2e5b0169cd
+17763,x64,6ce50996-86a2-48fd-9080-4169135a1f51
+17763,x86,c5619e9f-a040-472a-a9b7-f7c13e1b935e
+17763,arm64,298d5b36-db90-4e68-81dc-523a337480a9
+'@ | ConvertFrom-Csv
+}
+function Get-AutomaticLanguageList {
+    foreach ($code in ('ar-SA,bg-BG,cs-CZ,da-DK,de-DE,el-GR,en-GB,en-US,es-ES,es-MX,et-EE,fi-FI,fr-CA,fr-FR,he-IL,hr-HR,hu-HU,it-IT,ja-JP,ko-KR,lt-LT,lv-LV,nb-NO,nl-NL,pl-PL,pt-BR,pt-PT,ro-RO,ru-RU,sk-SK,sl-SI,sr-Latn-RS,sv-SE,th-TH,tr-TR,uk-UA,zh-CN,zh-TW' -split ',')) {
+        $culture = [Globalization.CultureInfo]::GetCultureInfo($code)
+        [pscustomobject]@{ Code = $culture.Name; Language = $culture.EnglishName }
+    }
+}
+function Get-AutomaticLanguageTarget {
+    Assert-Analyzed
+    $images = @($Script:S.Images | Where-Object { $Script:S.Selected -contains $_.Index })
+    if (-not $images.Count) { throw 'Tick at least one Windows edition before downloading language packs.' }
+    $keys = @($images | ForEach-Object { '{0}/{1}' -f (Get-BaseBuild ([int]$_.Build)), $_.Arch } | Select-Object -Unique)
+    if ($keys.Count -ne 1 -or @($images | Where-Object { $_.Edition -match '^Server' }).Count) { throw 'Automatic language packs need Windows client editions with the same base build and architecture.' }
+    $base = Get-BaseBuild ([int]$images[0].Build)
+    $arch = [string]$images[0].Arch
+    $source = @(Get-LanguageDownloadSources | Where-Object { [int]$_.Build -eq $base -and $_.Arch -eq $arch })
+    if ($source.Count -ne 1) { throw "No automatic language-pack source is registered for build $base / $arch. Import a matching full CAB or use a direct Microsoft CAB link." }
+    return [pscustomobject]@{ Build = $base; Arch = $arch; Id = [string]$source[0].Id }
+}
+function ConvertTo-LanguagePayloadUrl([string]$Url) {
+    $uri = $null
+    if ($Url -match '[\s"\x00-\x1f]' -or -not [uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or $uri.UserInfo -or $uri.Fragment -or $uri.Scheme -notin 'http', 'https') { throw 'Invalid language-pack download URL.' }
+    if ($uri.DnsSafeHost -notmatch '(^|\.)(download\.windowsupdate\.com|download\.microsoft\.com|dl\.delivery\.mp\.microsoft\.com)$' -or -not $uri.IsDefaultPort) { throw 'Automatic language packs must come from a Microsoft download host.' }
+    # UUP metadata may return HTTP links; payloads are fetched over HTTPS only.
+    $builder = New-Object UriBuilder($uri)
+    $builder.Scheme = 'https'; $builder.Port = -1
+    return $builder.Uri.AbsoluteUri
+}
+function Get-LanguagePayload($Files, [string]$Language) {
+    $pairs = if ($Files -is [Collections.IDictionary]) { @(foreach ($e in $Files.GetEnumerator()) { [pscustomobject]@{ Name = [string]$e.Key; Value = $e.Value } }) }
+             else { @($Files.PSObject.Properties) }
+    $region = [regex]::Escape($Language)
+    $found = @(foreach ($p in $pairs) {
+        $name = [string]$p.Name
+        if ($name -notmatch '(?i)^(cabs_)?Microsoft-Windows-Client-LanguagePack-Package[~_-]' -or $name -notmatch "(?i)[~_-]$region([~_.]|$)" -or $name -notmatch '(?i)\.(cab|esd)$') { continue }
+        if ($name -match '[\\/:\x00-\x1f]') { throw 'Invalid language-pack file name in UUP metadata.' }
+        $ext = [IO.Path]::GetExtension($name).ToLowerInvariant()
+        $data = $p.Value
+        if ([string]$data.sha1 -notmatch '^[a-fA-F0-9]{40}$' -or [long]$data.size -le 0 -or [long]$data.size -gt 2GB) { throw "Missing or invalid size / SHA-1 for $name." }
+        [pscustomobject]@{ Name = $name; Url = (ConvertTo-LanguagePayloadUrl ([string]$data.url)); Sha1 = ([string]$data.sha1).ToLowerInvariant(); Size = [long]$data.size; Extension = $ext; Priority = $(if ($ext -eq '.cab') { 0 } else { 1 }) }
+    })
+    if (-not $found.Count) { throw "UUP dump returned no full $Language language pack. Language features / LXP files are not used in place of the display-language pack." }
+    return @($found | Sort-Object Priority, @{ Expression = { $_.Size }; Descending = $true })[0]
+}
+function Save-AutomaticLanguagePayload($Payload) {
+    $dir = Join-Path $Script:P.Work 'languages\downloads'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $path = Join-Path $dir ($Payload.Sha1 + $Payload.Extension)
+    if ((Test-Path -LiteralPath $path -PathType Leaf) -and (Get-Item -LiteralPath $path).Length -eq $Payload.Size -and (Get-FileHash -LiteralPath $path -Algorithm SHA1).Hash -ieq $Payload.Sha1) { Write-Info "Cached: $($Payload.Name)"; return $path }
+    $part = "$path.part"
+    try {
+        Write-Step "Downloading $($Payload.Name) ($(Format-Size $Payload.Size))"
+        $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+        if (-not (Test-Path -LiteralPath $curl -PathType Leaf)) { throw 'curl.exe is required for automatic language-pack downloads.' }
+        # Direct process invocation keeps percent-encoded UUP URLs away from cmd.exe expansion.
+        $code = Invoke-Exe $curl ("--fail --location --proto =https --max-redirs 0 --retry 2 --output $(Q $part) $(Q $Payload.Url)")
+        if ($code -ne 0 -or -not (Test-Path -LiteralPath $part -PathType Leaf)) { throw "Language-pack download failed (exit $code)." }
+        if ((Get-Item -LiteralPath $part).Length -ne $Payload.Size -or (Get-FileHash -LiteralPath $part -Algorithm SHA1).Hash -ine $Payload.Sha1) { throw 'Language-pack size / SHA-1 mismatch. The payload was not queued.' }
+        Move-Item -LiteralPath $part -Destination $path -Force
+        return $path
+    } finally { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+}
+function Get-LanguageConversionTools {
+    # Immutable upstream revision of the ESD2CAB tools used by the supplied reference script.
+    $rev = '4c02e02d86d2f01e4ef556bc6a080382bd21cae4'
+    $hashes = @{
+        'cabarc.exe' = 'cceaa59cb4e67f993b099c5e2693eb15231de3863e29da14ff130f24b66ff260'
+        'SxSExpand.exe' = '9e889abd2d6068bc59aededc64a45d96e04c7ad5cb1d70f606f8ab0a96433b4a'
+    }
+    $dir = Join-Path $ToolsDir 'language-esd2cab'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $tools = @{}
+    foreach ($name in $hashes.Keys) {
+        $file = Join-Path $dir $name
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $hashes[$name]) {
+            Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            Save-Url ("https://raw.githubusercontent.com/abbodi1406/BatUtil/$rev/ESD2CAB-CAB2ESD/bin/$name") $file
+        }
+        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $hashes[$name]) { Remove-Item -LiteralPath $file -Force; throw "SHA-256 verification failed for $name." }
+        $tools[$name] = $file
+    }
+    [IO.File]::WriteAllText((Join-Path $dir 'UPSTREAM.txt'), "ESD2CAB tools from abbodi1406/BatUtil ($rev).`r`nhttps://github.com/abbodi1406/BatUtil/tree/$rev/ESD2CAB-CAB2ESD`r`nSxSExpand: Melinda Bellemore; cabarc: Microsoft. Upstream terms apply. Tools are downloaded on demand, not bundled.`r`n")
+    return $tools
+}
+function Test-LanguageManifestXml([string]$Path) {
+    $reader = $null
+    try {
+        $settings = New-Object Xml.XmlReaderSettings
+        $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit; $settings.XmlResolver = $null
+        $reader = [Xml.XmlReader]::Create($Path, $settings)
+        [void]$reader.MoveToContent()
+        return $reader.LocalName -eq 'assembly'
+    } catch { return $false }
+    finally { if ($reader) { $reader.Dispose() } }
+}
+function Convert-LanguageEsdToCab([string]$Esd, [int]$Build) {
+    $tools = Get-LanguageConversionTools
+    $dir = Join-Path $Script:P.Temp ('language-convert-' + [guid]::NewGuid().ToString('N'))
+    $apply = Join-Path $dir 'apply'; $expanded = Join-Path $dir 'expanded'
+    New-Item -ItemType Directory -Force -Path $apply, $expanded | Out-Null
+    $dest = [IO.Path]::ChangeExtension($Esd, '.cab')
+    $part = "$dest.part.cab"
+    try {
+        $Script:Dism = Get-ServicingDism $Build -Install
+        Write-Step 'Converting the language ESD into an integration CAB'
+        Invoke-Dism "/Apply-Image /ImageFile:$(Q $Esd) /Index:1 /ApplyDir:$(Q $apply) /CheckIntegrity" 'Apply language-pack ESD'
+        $n = 0
+        foreach ($m in @(Get-ChildItem -LiteralPath $apply -Filter '*.manifest' -File -Recurse)) {
+            if (Test-LanguageManifestXml $m.FullName) { continue }
+            $n++; $out = Join-Path $expanded "$n.manifest"
+            $r = Invoke-Native $tools['SxSExpand.exe'] @($m.FullName, $out)
+            if ($r.Code -ne 0 -or -not (Test-Path -LiteralPath $out) -or -not (Test-LanguageManifestXml $out)) { throw "Could not expand $($m.Name) from the language ESD." }
+            Copy-Item -LiteralPath $out -Destination $m.FullName -Force
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $apply 'update.mum'))) { throw 'The language ESD does not contain a Windows package manifest.' }
+        $code = Invoke-Exe $tools['cabarc.exe'] ("-m LZX:21 -r -p N $(Q $part) *.*") -WorkingDirectory $apply
+        if ($code -ne 0 -or -not (Test-Path -LiteralPath $part -PathType Leaf)) { throw "Language ESD-to-CAB conversion failed (exit $code)." }
+        $null = Get-LanguagePackInfo $part
+        Move-Item -LiteralPath $part -Destination $dest -Force
+        return $dest
+    } finally {
+        Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+function Invoke-AutomaticLanguageDownloads {
+    $requested = @($Script:Cfg.LanguageDownloads | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique)
+    if (-not $requested.Count) { return }
+    $allowed = @(Get-AutomaticLanguageList | ForEach-Object { $_.Code })
+    foreach ($lang in $requested) { if ($lang -notin $allowed) { throw "Unsupported automatic language selection: $lang." } }
+    $missing = @($requested | Where-Object { -not (Test-LanguageInSelectedImages $_) })
+    if (-not $missing.Count) { Write-Info 'The requested languages are already present in the ticked editions.'; return }
+    $target = Get-AutomaticLanguageTarget
+    foreach ($lang in $missing) {
+        $ready = @($Script:S.LanguagePacks | Where-Object { $_ -and $_.Language -ieq $lang -and $_.Arch -eq $target.Arch -and (Get-BaseBuild ([int]$_.Build)) -eq $target.Build })
+        if ($ready.Count -and (Test-Path -LiteralPath $ready[0].File -PathType Leaf) -and (Get-FileHash -LiteralPath $ready[0].File -Algorithm SHA256).Hash -ieq $ready[0].Sha256) { Write-Info "Language already queued: $lang"; continue }
+        if ($Script:S.Serviced) { throw 'Unpack the original ISO again before downloading / adding new languages.' }
+        Write-Step "Finding $lang language pack for build $($target.Build) / $($target.Arch)"
+        $response = Invoke-UupApi 'get' @{ id = $target.Id; lang = $lang; edition = 'core' }
+        $payload = Get-LanguagePayload $response.files $lang
+        $file = Save-AutomaticLanguagePayload $payload
+        if ($payload.Extension -eq '.esd') { $file = Convert-LanguageEsdToCab $file $target.Build }
+        $info = Get-LanguagePackInfo $file
+        if ($info.Language -ine $lang) { throw "The downloaded language pack is $($info.Language), not $lang." }
+        Assert-LanguagePackTarget $info
+        Add-LanguagePack $file
+        foreach ($pack in @($Script:S.LanguagePacks | Where-Object { $_.Language -ieq $lang })) {
+            $pack.Source = 'uup-language'; $pack.UpdateId = $target.Id; $pack.PayloadSha1 = $payload.Sha1
+        }
+        Save-State
+        Write-Ok "$lang downloaded and queued for integration."
+    }
+}
+function Test-LanguageInSelectedImages([string]$Language) {
+    $images = @($Script:S.Images | Where-Object { $Script:S.Selected -contains $_.Index })
+    if (-not $images.Count) { return $false }
+    $pattern = '(?i)(^|[,;\s])' + [regex]::Escape($Language) + '($|[,;\s])'
+    return @($images | Where-Object { $_.Langs -notmatch $pattern }).Count -eq 0
+}
+function Assert-AutomaticLanguagesServiced {
+    foreach ($lang in @($Script:Cfg.LanguageDownloads | Where-Object { $_ })) {
+        if (Test-LanguageInSelectedImages $lang) { continue }
+        if ($Script:S.Serviced -and $lang -in @($Script:S.Serviced.LanguagePacks) -and @($Script:S.Selected).Count -gt 0 -and @($Script:S.Selected | Where-Object { $_ -notin @($Script:S.Serviced.LanguageEditions) }).Count -eq 0) { continue }
+        throw "Requested language $lang has not been integrated into the ticked editions. Run Download updates and Slipstream, or Run everything, before building the ISO."
+    }
 }
 #endregion
 
@@ -2274,6 +2469,7 @@ function Invoke-Service([switch]$Auto) {
         Write-Warn "This media was already serviced on $($S.Serviced.When). For a clean result unpack the ISO again (step 1)."
         if (-not (Read-YesNo 'Service it again anyway?' $false)) { return }
     }
+    Invoke-AutomaticLanguageDownloads
     Test-QueuedLanguagePacks
     if (@($S.LanguagePacks).Count -and $S.Serviced) { throw 'Language packs need fresh media. Unpack the original ISO before slipstreaming again.' }
     $upd = Get-UpdateFiles
@@ -2483,10 +2679,12 @@ function Invoke-Service([switch]$Auto) {
         Build    = $newList[0].Version
         Editions = @($newList | ForEach-Object { "$($_.Name) ($($_.Version))" })
         Boot2023 = $b2023
+        LanguagePacks = @($S.LanguagePacks | Where-Object { $_ } | ForEach-Object { $_.Language })
         Updates  = @($S.Updates | ForEach-Object { $_.KB })
     }
     $S.Images = @($newList)
     $S.Selected = @(for ($j = 0; $j -lt $exportIdx.Count; $j++) { if ($S.Selected -contains $exportIdx[$j]) { $j + 1 } })
+    $S.Serviced.LanguageEditions = @($S.Selected)
     $S.Iso = $null
     Save-State
     Remove-Item -LiteralPath $P.Temp -Recurse -Force -ErrorAction SilentlyContinue
@@ -2518,6 +2716,7 @@ function Test-FileInUse([string]$Path) {
 }
 function Invoke-Build([switch]$Auto, [string]$OutIso) {
     Assert-Unpacked
+    Assert-AutomaticLanguagesServiced
     $S = $Script:S; $P = $Script:P; $Cfg = $Script:Cfg
     Write-Title 'Build ISO'
     $osc = Find-Oscdimg
@@ -2628,7 +2827,7 @@ function Push-ExeLine([string]$Line) {
     $col = if ($t -match '^(Error|ERROR)') { 'Red' } elseif ($t -match '^(Warning|WARNING)') { 'Yellow' } else { 'DarkGray' }
     Write-Host "       $t" -ForegroundColor $col
 }
-function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr) {
+function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr, [string]$WorkingDirectory) {
     Add-Log "EXEC $File $Arguments"
     $psi = New-Object Diagnostics.ProcessStartInfo
     if ($MergeErr) {
@@ -2640,6 +2839,7 @@ function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr) {
         $psi.RedirectStandardError = $true
     }
     $psi.UseShellExecute = $false
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
     $psi.RedirectStandardOutput = $true
     $psi.CreateNoWindow = $true
     $p = [Diagnostics.Process]::Start($psi)
@@ -5500,6 +5700,7 @@ function Invoke-Job([string]$Job, $A) {
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }
             'ConvertImage' { Invoke-ImageConversion $A.Source $A.Destination $A.Mode }
+            'AutoLanguages' { Invoke-AutomaticLanguageDownloads }
             'ImportLanguage' { Add-LanguagePack $A.File }
             'DownloadLanguage' { Save-LanguagePack $A.Url $A.Sha256 }
             'Download'     { Invoke-Download -Auto }
@@ -5793,7 +5994,7 @@ __RES__
           <TextBlock Text="W10" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.5.0" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
+          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.6.0" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
           <TextBlock Text="updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO" Foreground="#8A94A8" FontSize="11"/>
         </StackPanel>
       </StackPanel>
@@ -6072,8 +6273,17 @@ $Script:XPages = @'
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>
               <TextBlock Style="{StaticResource H2}" Text="Windows language packs"/>
-              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language."/>
-              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged."/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,10" Text="Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required."/>
+              <TextBlock x:Name="LpAutoTarget" Style="{StaticResource Sub}" Margin="0,0,0,10"/>
+              <WrapPanel Margin="0,0,0,10"><Button x:Name="LpAutoAll" Style="{StaticResource Btn}" Content="Tick all"/><Button x:Name="LpAutoNone" Style="{StaticResource Btn}" Content="Tick none"/></WrapPanel>
+              <DataGrid x:Name="LpAutoGrid" Height="230" IsReadOnly="False">
+                <DataGrid.Columns>
+                  <DataGridTemplateColumn Header="Use" Width="54"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Use, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Cursor="Hand"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                </DataGrid.Columns>
+              </DataGrid>
+              <Button x:Name="LpAutoDownload" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,12,0,10" Content="Download selected language packs"/>
+              <TextBlock Style="{StaticResource Sub}" Margin="0,0,0,12" Text="Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time."/>
+              <TextBlock Style="{StaticResource H2}" Text="Advanced: direct CAB download or import"/>
               <TextBlock Text="Direct Microsoft CAB URL" Margin="0,4"/>
               <TextBox x:Name="LpUrl"/>
               <TextBlock Text="Expected SHA-256 (optional)" Margin="0,10,0,4"/>
@@ -6588,8 +6798,10 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, para o Windows 10 2004-22
 Find and download updates	Procurar e transferir atualiza&#xE7;&#xF5;es
 Downloaded	Transferidas
 Windows language packs	Pacotes de idiomas do Windows
-1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extraia um ISO e selecione as edi&#xE7;&#xF5;es. 2. Importe um CAB de idioma compat&#xED;vel ou cole abaixo a liga&#xE7;&#xE3;o direta da Microsoft. 3. Descarregue as atualiza&#xE7;&#xF5;es do Windows e integre. A compila&#xE7;&#xE3;o e a arquitetura s&#xE3;o verificadas; os pacotes s&#xE3;o adicionados &#xE0;s edi&#xE7;&#xF5;es selecionadas antes das atualiza&#xE7;&#xF5;es cumulativas. A instala&#xE7;&#xE3;o e a recupera&#xE7;&#xE3;o mant&#xEA;m o idioma original.
-Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenha pacotes CAB completos para a mesma vers&#xE3;o e arquitetura do Windows nos suportes de idiomas / Idiomas e Funcionalidades Opcionais da Microsoft. Algumas vers&#xF5;es exigem acesso a suportes licenciados; n&#xE3;o existe um cat&#xE1;logo CAB p&#xFA;blico universal. LXP e Funcionalidades a Pedido n&#xE3;o s&#xE3;o suportados aqui. Idiomas adicionais aumentam o tamanho da imagem e o tempo de manuten&#xE7;&#xE3;o; o desempenho ap&#xF3;s a instala&#xE7;&#xE3;o normalmente n&#xE3;o muda.
+Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.	Selecione os idiomas adicionais do Windows. A compila&#xE7;&#xE3;o e a arquitetura do ISO s&#xE3;o detetadas automaticamente. Descarregar atualiza&#xE7;&#xF5;es, Integrar e Executar tudo descarregam os pacotes em falta atrav&#xE9;s do UUP dump, verificam os hashes dos ficheiros da Microsoft e convertem ESD em CAB quando necess&#xE1;rio. N&#xE3;o precisa de liga&#xE7;&#xF5;es de transfer&#xEA;ncia.
+Download selected language packs	Descarregar pacotes de idiomas selecionados
+Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.	Os pacotes s&#xE3;o integrados nas edi&#xE7;&#xF5;es selecionadas antes das atualiza&#xE7;&#xF5;es cumulativas. Comece com suportes originais e descarregue as atualiza&#xE7;&#xF5;es do Windows antes de integrar. A instala&#xE7;&#xE3;o e a recupera&#xE7;&#xE3;o mant&#xEA;m o idioma original. Voz, escrita manual, OCR e LXP opcionais n&#xE3;o s&#xE3;o inclu&#xED;dos. Mais idiomas aumentam o tamanho da imagem e o tempo de manuten&#xE7;&#xE3;o.
+Advanced: direct CAB download or import	Avan&#xE7;ado: descarregar CAB direto ou importar
 Direct Microsoft CAB URL	URL direto do CAB da Microsoft
 Expected SHA-256 (optional)	SHA-256 esperado (opcional)
 Download and add language pack	Descarregar e adicionar pacote de idioma
@@ -6788,6 +7000,9 @@ missing - downloaded automatically when you sign drivers	em falta - transferido 
 missing - downloaded only if the signing engine needs Inf2Cat as fallback	em falta - s&#xF3; &#xE9; transferido se o motor de assinatura precisar do Inf2Cat como alternativa
 missing - only needed for the MakeCat signing engine	em falta - s&#xF3; &#xE9; preciso para o motor de assinatura MakeCat
 missing - PowerShell / BITS downloads are used	em falta - s&#xE3;o usadas transfer&#xEA;ncias do PowerShell / BITS
+Unpack an ISO and tick editions to detect the language-pack source.	Extraia um ISO e selecione edi&#xE7;&#xF5;es para detetar a origem dos pacotes de idiomas.
+Detected language-pack source: build {0} / {1}	Origem de pacotes de idiomas detetada: compila&#xE7;&#xE3;o {0} / {1}
+Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.	As transfer&#xEA;ncias autom&#xE1;ticas n&#xE3;o est&#xE3;o dispon&#xED;veis para esta sele&#xE7;&#xE3;o. Importe um CAB compat&#xED;vel ou use uma liga&#xE7;&#xE3;o direta da Microsoft.
 Default. makecat.exe (Windows SDK) builds one catalog per driver folder with the hash of every file in it, so each file is hashed once - about 20 s for NVIDIA's 3 GB Display.Driver instead of minutes. Compressed files (name.dl_) are hashed expanded, the way Windows checks them. MakeCat does not parse the INF: every catalog is checked with signtool afterwards, and a folder MakeCat cannot do goes to Inf2Cat.	Predefinido. O makecat.exe (Windows SDK) cria um cat&#xE1;logo por pasta de controladores com o hash de todos os ficheiros nela, por isso cada ficheiro &#xE9; calculado uma s&#xF3; vez - cerca de 20 s para os 3 GB do Display.Driver da NVIDIA em vez de minutos. Os ficheiros comprimidos (nome.dl_) s&#xE3;o calculados expandidos, como o Windows os verifica. O MakeCat n&#xE3;o analisa o INF: cada cat&#xE1;logo &#xE9; verificado com o signtool depois, e uma pasta que o MakeCat n&#xE3;o consiga tratar passa para o Inf2Cat.
 Experimental. The catalog is built with the CryptCAT API of Windows itself, the way libwdi (Zadig) does it - nothing to download. One catalog per driver folder with the hash of every file in it (SHA-1). Checked with signtool afterwards; a folder it cannot do goes to Inf2Cat.	Experimental. O cat&#xE1;logo &#xE9; criado com a API CryptCAT do pr&#xF3;prio Windows, como faz o libwdi (Zadig) - nada a transferir. Um cat&#xE1;logo por pasta de controladores com o hash de todos os ficheiros nela (SHA-1). Verificado com o signtool depois; uma pasta que n&#xE3;o consiga tratar passa para o Inf2Cat.
 Experimental. LINBIT generate-cat-file (GPL-2.0): its source is downloaded from GitHub (one pinned commit, SHA-256 checked) and built inside WSL - needs WSL with a Linux distribution that has gcc and make. One catalog per driver folder; Inf2Cat signs when WSL or the build is missing.	Experimental. LINBIT generate-cat-file (GPL-2.0): o c&#xF3;digo-fonte &#xE9; transferido do GitHub (um commit fixo, verificado com SHA-256) e compilado dentro do WSL - precisa do WSL com uma distribui&#xE7;&#xE3;o Linux que tenha gcc e make. Um cat&#xE1;logo por pasta de controladores; o Inf2Cat assina quando falta o WSL ou a compila&#xE7;&#xE3;o.
@@ -6807,8 +7022,6 @@ SizeGB	Tamanho (GB)
 Kind	Tipo
 Date	Data
 Title	T&#xED;tulo
-Architecture	Arquitetura
-File	Ficheiro
 No	N.&#xBA;
 Source	Origem
 Class	Classe
@@ -6820,6 +7033,9 @@ Signed	Assinados
 Failed	Falhados
 When	Quando
 FixText	Corre&#xE7;&#xE3;o
+Architecture	Arquitetura
+File	Ficheiro
+Code	C&#xF3;digo
 Arch	Arquitetura
 Older	Antiga
 Unpack an ISO first (page 1).	Extraia primeiro uma ISO (p&#xE1;gina 1).
@@ -6852,6 +7068,7 @@ Source: {0}	Origem: {0}
 Editions: {0}	Edi&#xE7;&#xF5;es: {0}
 {0} ticked	{0} marcadas
 asked after unpacking	perguntado depois de extrair
+Automatic language downloads: {0}	Transfer&#xEA;ncias autom&#xE1;ticas de idiomas: {0}
 Drivers: {0}   Signed packages: {1}	Controladores: {0}   Pacotes assinados: {1}
 Answer file: {0}   $OEM$: {1}	Ficheiro de respostas: {0}   $OEM$: {1}
 Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.	Executar tudo agora? Demora 30-90 minutos - o PC fica acordado at&#xE9; terminar.
@@ -6892,7 +7109,6 @@ No answer file fixes to undo.	N&#xE3;o h&#xE1; corre&#xE7;&#xF5;es do ficheiro d
 Put the answer file back the way it was before the fixes?	Repor o ficheiro de respostas como estava antes das corre&#xE7;&#xF5;es?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' ainda est&#xE1; a decorrer. Fechar agora pode deixar uma imagem montada (execute a Limpeza da pr&#xF3;xima vez). Fechar mesmo assim?
 Id	ID
-Code	C&#xF3;digo
 '@ }
         'es' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	actualizaciones + controladores + mods NVIDIA firmados + autounattend + $OEM$  ->  ISO de arranque
@@ -6977,8 +7193,10 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, para Windows 10 2004-22H2
 Find and download updates	Buscar y descargar actualizaciones
 Downloaded	Descargadas
 Windows language packs	Paquetes de idioma de Windows
-1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extraiga un ISO y seleccione ediciones. 2. Importe un CAB de idioma compatible o pegue abajo su enlace directo de Microsoft. 3. Descargue las actualizaciones de Windows y despu&#xE9;s integre. Se comprueban la compilaci&#xF3;n y la arquitectura; los paquetes se a&#xF1;aden a las ediciones seleccionadas antes de las actualizaciones acumulativas. La instalaci&#xF3;n y la recuperaci&#xF3;n conservan su idioma original.
-Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenga paquetes CAB completos para la misma versi&#xF3;n y arquitectura de Windows en los medios de idiomas / Idiomas y caracter&#xED;sticas opcionales de Microsoft. Algunas versiones requieren acceso a medios con licencia; no existe una fuente p&#xFA;blica universal de CAB. Aqu&#xED; no se admiten LXP ni caracter&#xED;sticas a petici&#xF3;n. Los idiomas adicionales aumentan el tama&#xF1;o de la imagen y el tiempo de mantenimiento; el rendimiento tras la instalaci&#xF3;n normalmente no cambia.
+Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.	Seleccione los idiomas adicionales de Windows. La compilaci&#xF3;n y la arquitectura del ISO se detectan autom&#xE1;ticamente. Descargar actualizaciones, Integrar y Ejecutar todo descargan los paquetes que faltan mediante UUP dump, verifican los hashes de los archivos de Microsoft y convierten ESD a CAB cuando es necesario. No necesita enlaces de descarga.
+Download selected language packs	Descargar paquetes de idioma seleccionados
+Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.	Los paquetes se integran en las ediciones seleccionadas antes de las actualizaciones acumulativas. Empiece con medios originales y descargue las actualizaciones de Windows antes de integrar. La instalaci&#xF3;n y la recuperaci&#xF3;n conservan su idioma original. No se incluyen voz, escritura a mano, OCR ni LXP opcionales. M&#xE1;s idiomas aumentan el tama&#xF1;o de la imagen y el tiempo de mantenimiento.
+Advanced: direct CAB download or import	Avanzado: descargar CAB directo o importar
 Direct Microsoft CAB URL	URL directo del CAB de Microsoft
 Expected SHA-256 (optional)	SHA-256 esperado (opcional)
 Download and add language pack	Descargar y a&#xF1;adir paquete de idioma
@@ -7177,6 +7395,9 @@ missing - downloaded automatically when you sign drivers	falta: se descarga auto
 missing - downloaded only if the signing engine needs Inf2Cat as fallback	falta: solo se descarga si el motor de firma necesita Inf2Cat como alternativa
 missing - only needed for the MakeCat signing engine	falta: solo se necesita para el motor de firma MakeCat
 missing - PowerShell / BITS downloads are used	falta: se usan descargas de PowerShell / BITS
+Unpack an ISO and tick editions to detect the language-pack source.	Extraiga un ISO y seleccione ediciones para detectar la fuente de paquetes de idioma.
+Detected language-pack source: build {0} / {1}	Fuente de paquetes de idioma detectada: compilaci&#xF3;n {0} / {1}
+Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.	Las descargas autom&#xE1;ticas no est&#xE1;n disponibles para esta selecci&#xF3;n. Importe un CAB compatible o use un enlace directo de Microsoft.
 Default. makecat.exe (Windows SDK) builds one catalog per driver folder with the hash of every file in it, so each file is hashed once - about 20 s for NVIDIA's 3 GB Display.Driver instead of minutes. Compressed files (name.dl_) are hashed expanded, the way Windows checks them. MakeCat does not parse the INF: every catalog is checked with signtool afterwards, and a folder MakeCat cannot do goes to Inf2Cat.	Predeterminado. makecat.exe (Windows SDK) crea un cat&#xE1;logo por carpeta de controladores con el hash de todos sus archivos, as&#xED; que cada archivo se calcula una sola vez: unos 20 s para los 3 GB del Display.Driver de NVIDIA en lugar de minutos. Los archivos comprimidos (nombre.dl_) se calculan expandidos, como los comprueba Windows. MakeCat no analiza el INF: cada cat&#xE1;logo se comprueba despu&#xE9;s con signtool, y una carpeta que MakeCat no pueda procesar pasa a Inf2Cat.
 Experimental. The catalog is built with the CryptCAT API of Windows itself, the way libwdi (Zadig) does it - nothing to download. One catalog per driver folder with the hash of every file in it (SHA-1). Checked with signtool afterwards; a folder it cannot do goes to Inf2Cat.	Experimental. El cat&#xE1;logo se crea con la API CryptCAT del propio Windows, como hace libwdi (Zadig); no hay nada que descargar. Un cat&#xE1;logo por carpeta de controladores con el hash de todos sus archivos (SHA-1). Se comprueba despu&#xE9;s con signtool; una carpeta que no pueda procesar pasa a Inf2Cat.
 Experimental. LINBIT generate-cat-file (GPL-2.0): its source is downloaded from GitHub (one pinned commit, SHA-256 checked) and built inside WSL - needs WSL with a Linux distribution that has gcc and make. One catalog per driver folder; Inf2Cat signs when WSL or the build is missing.	Experimental. LINBIT generate-cat-file (GPL-2.0): su c&#xF3;digo fuente se descarga de GitHub (un commit fijo, comprobado con SHA-256) y se compila dentro de WSL; necesita WSL con una distribuci&#xF3;n Linux que tenga gcc y make. Un cat&#xE1;logo por carpeta de controladores; Inf2Cat firma cuando falta WSL o la compilaci&#xF3;n.
@@ -7196,8 +7417,6 @@ SizeGB	Tama&#xF1;o (GB)
 Kind	Tipo
 Date	Fecha
 Title	T&#xED;tulo
-Architecture	Arquitectura
-File	Archivo
 No	N.&#xBA;
 Source	Origen
 Class	Clase
@@ -7209,6 +7428,9 @@ Signed	Firmados
 Failed	Fallidos
 When	Cu&#xE1;ndo
 FixText	Correcci&#xF3;n
+Architecture	Arquitectura
+File	Archivo
+Code	C&#xF3;digo
 Arch	Arquitectura
 Older	Antigua
 Unpack an ISO first (page 1).	Extraiga primero una ISO (p&#xE1;gina 1).
@@ -7241,6 +7463,7 @@ Source: {0}	Origen: {0}
 Editions: {0}	Ediciones: {0}
 {0} ticked	{0} marcadas
 asked after unpacking	se pregunta despu&#xE9;s de extraer
+Automatic language downloads: {0}	Descargas autom&#xE1;ticas de idiomas: {0}
 Drivers: {0}   Signed packages: {1}	Controladores: {0}   Paquetes firmados: {1}
 Answer file: {0}   $OEM$: {1}	Archivo de respuesta: {0}   $OEM$: {1}
 Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.	&#xBF;Ejecutar todo ahora? Tarda 30-90 minutos; el PC se mantiene despierto hasta que termine.
@@ -7281,7 +7504,6 @@ No answer file fixes to undo.	No hay correcciones del archivo de respuesta que d
 Put the answer file back the way it was before the fixes?	&#xBF;Devolver el archivo de respuesta a como estaba antes de las correcciones?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' todav&#xED;a se est&#xE1; ejecutando. Cerrar ahora puede dejar una imagen montada (ejecute la Limpieza la pr&#xF3;xima vez). &#xBF;Cerrar de todos modos?
 Id	ID
-Code	C&#xF3;digo
 '@ }
         'fr' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	mises &#xE0; jour + pilotes + mods NVIDIA sign&#xE9;s + autounattend + $OEM$  ->  ISO amor&#xE7;able
@@ -7366,8 +7588,10 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, pour Windows 10 2004-22H2
 Find and download updates	Rechercher et t&#xE9;l&#xE9;charger les mises &#xE0; jour
 Downloaded	T&#xE9;l&#xE9;charg&#xE9;es
 Windows language packs	Packs de langues Windows
-1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Extrayez un ISO et cochez les &#xE9;ditions. 2. Importez un CAB de langue compatible ou collez son lien direct Microsoft ci-dessous. 3. T&#xE9;l&#xE9;chargez les mises &#xE0; jour Windows, puis int&#xE9;grez. La version et l&#x2019;architecture sont v&#xE9;rifi&#xE9;es ; les packs sont ajout&#xE9;s aux &#xE9;ditions coch&#xE9;es avant les mises &#xE0; jour cumulatives. L&#x2019;installation et la r&#xE9;cup&#xE9;ration conservent leur langue d&#x2019;origine.
-Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Obtenez les packs CAB complets correspondant &#xE0; la version et &#xE0; l&#x2019;architecture de Windows sur les supports de langues / Langues et fonctionnalit&#xE9;s facultatives de Microsoft. Certaines versions n&#xE9;cessitent un acc&#xE8;s &#xE0; des supports sous licence ; il n&#x2019;existe pas de source publique universelle de CAB. Les LXP et fonctionnalit&#xE9;s &#xE0; la demande ne sont pas pris en charge ici. Les langues suppl&#xE9;mentaires augmentent la taille et le temps de maintenance ; les performances apr&#xE8;s installation restent g&#xE9;n&#xE9;ralement identiques.
+Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.	Cochez les langues Windows suppl&#xE9;mentaires souhait&#xE9;es. La build et l&#x2019;architecture de l&#x2019;ISO sont d&#xE9;tect&#xE9;es automatiquement. T&#xE9;l&#xE9;charger les mises &#xE0; jour, Int&#xE9;grer et Tout ex&#xE9;cuter t&#xE9;l&#xE9;chargent les packs manquants via UUP dump, v&#xE9;rifient les hachages des fichiers Microsoft et convertissent les ESD en CAB si n&#xE9;cessaire. Aucun lien de t&#xE9;l&#xE9;chargement &#xE0; saisir.
+Download selected language packs	T&#xE9;l&#xE9;charger les packs de langues s&#xE9;lectionn&#xE9;s
+Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.	Les packs sont int&#xE9;gr&#xE9;s aux &#xE9;ditions coch&#xE9;es avant les mises &#xE0; jour cumulatives. Partez de supports d&#x2019;origine et t&#xE9;l&#xE9;chargez les mises &#xE0; jour Windows avant l&#x2019;int&#xE9;gration. L&#x2019;installation et la r&#xE9;cup&#xE9;ration conservent leur langue d&#x2019;origine. Les options vocales, manuscrites, OCR et LXP ne sont pas incluses. Des langues suppl&#xE9;mentaires augmentent la taille de l&#x2019;image et le temps de maintenance.
+Advanced: direct CAB download or import	Avanc&#xE9; : t&#xE9;l&#xE9;chargement direct d&#x2019;un CAB ou import
 Direct Microsoft CAB URL	URL direct du CAB Microsoft
 Expected SHA-256 (optional)	SHA-256 attendu (facultatif)
 Download and add language pack	T&#xE9;l&#xE9;charger et ajouter le pack de langue
@@ -7566,6 +7790,9 @@ missing - downloaded automatically when you sign drivers	manquant - t&#xE9;l&#xE
 missing - downloaded only if the signing engine needs Inf2Cat as fallback	manquant - t&#xE9;l&#xE9;charg&#xE9; seulement si le moteur de signature a besoin d'Inf2Cat en secours
 missing - only needed for the MakeCat signing engine	manquant - n&#xE9;cessaire seulement pour le moteur de signature MakeCat
 missing - PowerShell / BITS downloads are used	manquant - les t&#xE9;l&#xE9;chargements PowerShell / BITS sont utilis&#xE9;s
+Unpack an ISO and tick editions to detect the language-pack source.	Extrayez un ISO et cochez des &#xE9;ditions pour d&#xE9;tecter la source des packs de langues.
+Detected language-pack source: build {0} / {1}	Source de packs de langues d&#xE9;tect&#xE9;e : build {0} / {1}
+Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.	Les t&#xE9;l&#xE9;chargements automatiques sont indisponibles pour cette s&#xE9;lection. Importez un CAB compatible ou utilisez un lien direct Microsoft.
 Default. makecat.exe (Windows SDK) builds one catalog per driver folder with the hash of every file in it, so each file is hashed once - about 20 s for NVIDIA's 3 GB Display.Driver instead of minutes. Compressed files (name.dl_) are hashed expanded, the way Windows checks them. MakeCat does not parse the INF: every catalog is checked with signtool afterwards, and a folder MakeCat cannot do goes to Inf2Cat.	Par d&#xE9;faut. makecat.exe (Windows SDK) cr&#xE9;e un catalogue par dossier de pilotes avec le hachage de chaque fichier qu'il contient, donc chaque fichier n'est hach&#xE9; qu'une fois - environ 20 s pour les 3 Go du Display.Driver de NVIDIA au lieu de plusieurs minutes. Les fichiers compress&#xE9;s (nom.dl_) sont hach&#xE9;s d&#xE9;compress&#xE9;s, comme Windows les v&#xE9;rifie. MakeCat n'analyse pas l'INF : chaque catalogue est v&#xE9;rifi&#xE9; ensuite avec signtool, et un dossier que MakeCat ne peut pas traiter passe &#xE0; Inf2Cat.
 Experimental. The catalog is built with the CryptCAT API of Windows itself, the way libwdi (Zadig) does it - nothing to download. One catalog per driver folder with the hash of every file in it (SHA-1). Checked with signtool afterwards; a folder it cannot do goes to Inf2Cat.	Exp&#xE9;rimental. Le catalogue est cr&#xE9;&#xE9; avec l'API CryptCAT de Windows lui-m&#xEA;me, comme le fait libwdi (Zadig) - rien &#xE0; t&#xE9;l&#xE9;charger. Un catalogue par dossier de pilotes avec le hachage de chaque fichier qu'il contient (SHA-1). V&#xE9;rifi&#xE9; ensuite avec signtool ; un dossier qu'il ne peut pas traiter passe &#xE0; Inf2Cat.
 Experimental. LINBIT generate-cat-file (GPL-2.0): its source is downloaded from GitHub (one pinned commit, SHA-256 checked) and built inside WSL - needs WSL with a Linux distribution that has gcc and make. One catalog per driver folder; Inf2Cat signs when WSL or the build is missing.	Exp&#xE9;rimental. LINBIT generate-cat-file (GPL-2.0) : son code source est t&#xE9;l&#xE9;charg&#xE9; depuis GitHub (un commit fix&#xE9;, v&#xE9;rifi&#xE9; par SHA-256) et compil&#xE9; dans WSL - n&#xE9;cessite WSL avec une distribution Linux qui a gcc et make. Un catalogue par dossier de pilotes ; Inf2Cat signe quand WSL ou la compilation manque.
@@ -7585,8 +7812,6 @@ SizeGB	Taille (Go)
 Kind	Type
 Date	Date
 Title	Titre
-Architecture	Architecture
-File	Fichier
 No	N&#xB0;
 Source	Source
 Class	Classe
@@ -7598,6 +7823,9 @@ Signed	Sign&#xE9;s
 Failed	&#xC9;chou&#xE9;s
 When	Quand
 FixText	Correction
+Architecture	Architecture
+File	Fichier
+Code	Code
 Arch	Architecture
 Older	Ancienne
 Unpack an ISO first (page 1).	Extrayez d'abord une ISO (page 1).
@@ -7630,6 +7858,7 @@ Source: {0}	Source : {0}
 Editions: {0}	&#xC9;ditions : {0}
 {0} ticked	{0} coch&#xE9;es
 asked after unpacking	demand&#xE9; apr&#xE8;s l'extraction
+Automatic language downloads: {0}	T&#xE9;l&#xE9;chargements automatiques de langues : {0}
 Drivers: {0}   Signed packages: {1}	Pilotes : {0}   Paquets sign&#xE9;s : {1}
 Answer file: {0}   $OEM$: {1}	Fichier de r&#xE9;ponses : {0}   $OEM$ : {1}
 Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.	Tout ex&#xE9;cuter maintenant ? Cela prend 30-90 minutes - le PC reste &#xE9;veill&#xE9; jusqu'&#xE0; la fin.
@@ -7670,7 +7899,6 @@ No answer file fixes to undo.	Aucune correction du fichier de r&#xE9;ponses &#xE
 Put the answer file back the way it was before the fixes?	Remettre le fichier de r&#xE9;ponses tel qu'il &#xE9;tait avant les corrections ?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' est encore en cours. Fermer maintenant peut laisser une image mont&#xE9;e (lancez le Nettoyage la prochaine fois). Fermer quand m&#xEA;me ?
 Id	ID
-Code	Code
 '@ }
         'de' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	Updates + Treiber + signierte NVIDIA-Mods + autounattend + $OEM$  ->  bootf&#xE4;hige ISO
@@ -7755,8 +7983,10 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	JJJJ-MM, f&#xFC;r Windows 10 2004-
 Find and download updates	Updates suchen und herunterladen
 Downloaded	Heruntergeladen
 Windows language packs	Windows-Sprachpakete
-1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. ISO entpacken und Editionen ausw&#xE4;hlen. 2. Ein passendes Sprachpaket-CAB importieren oder unten den direkten Microsoft-Link einf&#xFC;gen. 3. Windows-Updates herunterladen und integrieren. Build und Architektur werden gepr&#xFC;ft; die Pakete werden vor kumulativen Updates in die ausgew&#xE4;hlten Editionen integriert. Setup und Wiederherstellung behalten ihre urspr&#xFC;ngliche Sprache.
-Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Vollst&#xE4;ndige CAB-Pakete f&#xFC;r dieselbe Windows-Version und Architektur sind auf Microsoft-Medien f&#xFC;r Sprachpakete / Sprachen und optionale Features erh&#xE4;ltlich. Manche Versionen erfordern Zugang zu lizenzierten Medien; es gibt keine allgemeine &#xF6;ffentliche CAB-Quelle. LXP und Features bei Bedarf werden hier nicht unterst&#xFC;tzt. Zus&#xE4;tzliche Sprachen vergr&#xF6;&#xDF;ern das Abbild und verl&#xE4;ngern die Wartung; die Leistung nach der Installation bleibt meist gleich.
+Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.	W&#xE4;hlen Sie die zus&#xE4;tzlichen Windows-Sprachen. Build und Architektur des ISO werden automatisch erkannt. Updates herunterladen, Integrieren und Alles ausf&#xFC;hren laden fehlende Pakete &#xFC;ber UUP dump herunter, pr&#xFC;fen die Hashes der Microsoft-Dateien und konvertieren ESD bei Bedarf in CAB. Downloadlinks m&#xFC;ssen nicht eingegeben werden.
+Download selected language packs	Ausgew&#xE4;hlte Sprachpakete herunterladen
+Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.	Die Pakete werden vor kumulativen Updates in die ausgew&#xE4;hlten Editionen integriert. Beginnen Sie mit Originalmedien und laden Sie vor der Integration Windows-Updates herunter. Setup und Wiederherstellung behalten ihre urspr&#xFC;ngliche Sprache. Optionale Spracheingabe, Handschrift, OCR und LXP sind nicht enthalten. Mehr Sprachen vergr&#xF6;&#xDF;ern das Abbild und verl&#xE4;ngern die Wartung.
+Advanced: direct CAB download or import	Erweitert: CAB direkt herunterladen oder importieren
 Direct Microsoft CAB URL	Direkte Microsoft-CAB-URL
 Expected SHA-256 (optional)	Erwarteter SHA-256 (optional)
 Download and add language pack	Sprachpaket herunterladen und hinzuf&#xFC;gen
@@ -7955,6 +8185,9 @@ missing - downloaded automatically when you sign drivers	fehlt - wird beim Signi
 missing - downloaded only if the signing engine needs Inf2Cat as fallback	fehlt - wird nur heruntergeladen, wenn das Signaturmodul Inf2Cat als Ausweichl&#xF6;sung braucht
 missing - only needed for the MakeCat signing engine	fehlt - nur f&#xFC;r das Signaturmodul MakeCat n&#xF6;tig
 missing - PowerShell / BITS downloads are used	fehlt - Downloads &#xFC;ber PowerShell / BITS werden verwendet
+Unpack an ISO and tick editions to detect the language-pack source.	Entpacken Sie ein ISO und w&#xE4;hlen Sie Editionen, um die Sprachpaketquelle zu erkennen.
+Detected language-pack source: build {0} / {1}	Erkannte Sprachpaketquelle: Build {0} / {1}
+Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.	Automatische Downloads sind f&#xFC;r diese Auswahl nicht verf&#xFC;gbar. Importieren Sie ein passendes CAB oder nutzen Sie einen direkten Microsoft-Link.
 Default. makecat.exe (Windows SDK) builds one catalog per driver folder with the hash of every file in it, so each file is hashed once - about 20 s for NVIDIA's 3 GB Display.Driver instead of minutes. Compressed files (name.dl_) are hashed expanded, the way Windows checks them. MakeCat does not parse the INF: every catalog is checked with signtool afterwards, and a folder MakeCat cannot do goes to Inf2Cat.	Standard. makecat.exe (Windows SDK) erstellt einen Katalog pro Treiberordner mit dem Hash jeder Datei darin, jede Datei wird also nur einmal gehasht - etwa 20 s f&#xFC;r NVIDIAs 3 GB Display.Driver statt Minuten. Komprimierte Dateien (name.dl_) werden entpackt gehasht, so wie Windows sie pr&#xFC;ft. MakeCat liest die INF nicht: jeder Katalog wird danach mit signtool gepr&#xFC;ft, und ein Ordner, den MakeCat nicht schafft, geht an Inf2Cat.
 Experimental. The catalog is built with the CryptCAT API of Windows itself, the way libwdi (Zadig) does it - nothing to download. One catalog per driver folder with the hash of every file in it (SHA-1). Checked with signtool afterwards; a folder it cannot do goes to Inf2Cat.	Experimentell. Der Katalog wird mit der CryptCAT-API von Windows selbst erstellt, so wie libwdi (Zadig) es macht - nichts herunterzuladen. Ein Katalog pro Treiberordner mit dem Hash jeder Datei darin (SHA-1). Danach mit signtool gepr&#xFC;ft; ein Ordner, den es nicht schafft, geht an Inf2Cat.
 Experimental. LINBIT generate-cat-file (GPL-2.0): its source is downloaded from GitHub (one pinned commit, SHA-256 checked) and built inside WSL - needs WSL with a Linux distribution that has gcc and make. One catalog per driver folder; Inf2Cat signs when WSL or the build is missing.	Experimentell. LINBIT generate-cat-file (GPL-2.0): der Quellcode wird von GitHub geladen (ein fester Commit, per SHA-256 gepr&#xFC;ft) und in WSL gebaut - braucht WSL mit einer Linux-Distribution, die gcc und make hat. Ein Katalog pro Treiberordner; Inf2Cat signiert, wenn WSL oder der Build fehlt.
@@ -7974,8 +8207,6 @@ SizeGB	Gr&#xF6;&#xDF;e (GB)
 Kind	Art
 Date	Datum
 Title	Titel
-Architecture	Architektur
-File	Datei
 No	Nr.
 Source	Quelle
 Class	Klasse
@@ -7987,6 +8218,9 @@ Signed	Signiert
 Failed	Fehlgeschlagen
 When	Wann
 FixText	Korrektur
+Architecture	Architektur
+File	Datei
+Code	Code
 Arch	Architektur
 Older	&#xC4;lter
 Unpack an ISO first (page 1).	Entpacken Sie zuerst eine ISO (Seite 1).
@@ -8019,6 +8253,7 @@ Source: {0}	Quelle: {0}
 Editions: {0}	Editionen: {0}
 {0} ticked	{0} angehakt
 asked after unpacking	wird nach dem Entpacken gefragt
+Automatic language downloads: {0}	Automatische Sprachdownloads: {0}
 Drivers: {0}   Signed packages: {1}	Treiber: {0}   Signierte Pakete: {1}
 Answer file: {0}   $OEM$: {1}	Antwortdatei: {0}   $OEM$: {1}
 Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.	Jetzt alles ausf&#xFC;hren? Es dauert 30-90 Minuten - der PC bleibt wach, bis es fertig ist.
@@ -8059,7 +8294,6 @@ No answer file fixes to undo.	Keine Korrekturen der Antwortdatei zum R&#xFC;ckg&
 Put the answer file back the way it was before the fixes?	Die Antwortdatei wieder so herstellen, wie sie vor den Korrekturen war?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' l&#xE4;uft noch. Wenn Sie jetzt schlie&#xDF;en, kann ein eingebundenes Abbild zur&#xFC;ckbleiben (beim n&#xE4;chsten Mal Bereinigen ausf&#xFC;hren). Trotzdem schlie&#xDF;en?
 Id	ID
-Code	Code
 '@ }
         'it' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	aggiornamenti + driver + mod NVIDIA firmati + autounattend + $OEM$  ->  ISO avviabile
@@ -8144,8 +8378,10 @@ YYYY-MM, for Windows 10 2004-22H2 / LTSC 2021	AAAA-MM, per Windows 10 2004-22H2 
 Find and download updates	Cerca e scarica gli aggiornamenti
 Downloaded	Scaricati
 Windows language packs	Language pack di Windows
-1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.	1. Estrarre un ISO e selezionare le edizioni. 2. Importare un CAB della lingua compatibile o incollare sotto il collegamento diretto Microsoft. 3. Scaricare gli aggiornamenti di Windows, poi integrare. Vengono controllate build e architettura; i pacchetti vengono aggiunti alle edizioni selezionate prima degli aggiornamenti cumulativi. Installazione e ripristino mantengono la lingua originale.
-Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.	Ottenere i pacchetti CAB completi per la stessa versione e architettura di Windows dai supporti Microsoft per lingue / Lingue e funzionalit&#xE0; facoltative. Alcune versioni richiedono accesso a supporti con licenza; non esiste una fonte pubblica universale di CAB. LXP e funzionalit&#xE0; su richiesta non sono supportati qui. Le lingue aggiuntive aumentano le dimensioni e il tempo di manutenzione; le prestazioni dopo l&#x2019;installazione di solito non cambiano.
+Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.	Selezionare le lingue Windows aggiuntive. Build e architettura dell&#x2019;ISO vengono rilevate automaticamente. Scarica aggiornamenti, Integra ed Esegui tutto scaricano i pacchetti mancanti tramite UUP dump, verificano gli hash dei file Microsoft e convertono ESD in CAB quando serve. Non occorre inserire collegamenti di download.
+Download selected language packs	Scarica i language pack selezionati
+Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.	I pacchetti vengono integrati nelle edizioni selezionate prima degli aggiornamenti cumulativi. Iniziare con supporti originali e scaricare gli aggiornamenti di Windows prima dell&#x2019;integrazione. Installazione e ripristino mantengono la lingua originale. Voce, scrittura a mano, OCR e LXP facoltativi non sono inclusi. Pi&#xF9; lingue aumentano le dimensioni dell&#x2019;immagine e il tempo di manutenzione.
+Advanced: direct CAB download or import	Avanzate: download diretto CAB o importazione
 Direct Microsoft CAB URL	URL diretto del CAB Microsoft
 Expected SHA-256 (optional)	SHA-256 previsto (facoltativo)
 Download and add language pack	Scarica e aggiungi language pack
@@ -8344,6 +8580,9 @@ missing - downloaded automatically when you sign drivers	manca - viene scaricato
 missing - downloaded only if the signing engine needs Inf2Cat as fallback	manca - viene scaricato solo se il motore di firma ha bisogno di Inf2Cat come riserva
 missing - only needed for the MakeCat signing engine	manca - serve solo per il motore di firma MakeCat
 missing - PowerShell / BITS downloads are used	manca - vengono usati i download di PowerShell / BITS
+Unpack an ISO and tick editions to detect the language-pack source.	Estrarre un ISO e selezionare le edizioni per rilevare la fonte dei language pack.
+Detected language-pack source: build {0} / {1}	Fonte dei language pack rilevata: build {0} / {1}
+Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.	I download automatici non sono disponibili per questa selezione. Importare un CAB compatibile o usare un collegamento diretto Microsoft.
 Default. makecat.exe (Windows SDK) builds one catalog per driver folder with the hash of every file in it, so each file is hashed once - about 20 s for NVIDIA's 3 GB Display.Driver instead of minutes. Compressed files (name.dl_) are hashed expanded, the way Windows checks them. MakeCat does not parse the INF: every catalog is checked with signtool afterwards, and a folder MakeCat cannot do goes to Inf2Cat.	Predefinito. makecat.exe (Windows SDK) crea un catalogo per cartella di driver con l'hash di ogni file al suo interno, cos&#xEC; ogni file viene calcolato una sola volta - circa 20 s per i 3 GB del Display.Driver di NVIDIA invece di minuti. I file compressi (nome.dl_) vengono calcolati espansi, come li controlla Windows. MakeCat non analizza l'INF: ogni catalogo viene poi controllato con signtool, e una cartella che MakeCat non riesce a gestire passa a Inf2Cat.
 Experimental. The catalog is built with the CryptCAT API of Windows itself, the way libwdi (Zadig) does it - nothing to download. One catalog per driver folder with the hash of every file in it (SHA-1). Checked with signtool afterwards; a folder it cannot do goes to Inf2Cat.	Sperimentale. Il catalogo viene creato con l'API CryptCAT di Windows stesso, come fa libwdi (Zadig) - niente da scaricare. Un catalogo per cartella di driver con l'hash di ogni file al suo interno (SHA-1). Controllato poi con signtool; una cartella che non riesce a gestire passa a Inf2Cat.
 Experimental. LINBIT generate-cat-file (GPL-2.0): its source is downloaded from GitHub (one pinned commit, SHA-256 checked) and built inside WSL - needs WSL with a Linux distribution that has gcc and make. One catalog per driver folder; Inf2Cat signs when WSL or the build is missing.	Sperimentale. LINBIT generate-cat-file (GPL-2.0): il codice sorgente viene scaricato da GitHub (un commit fisso, controllato con SHA-256) e compilato dentro WSL - serve WSL con una distribuzione Linux che abbia gcc e make. Un catalogo per cartella di driver; Inf2Cat firma quando mancano WSL o la compilazione.
@@ -8363,8 +8602,6 @@ SizeGB	Dimensione (GB)
 Kind	Tipo
 Date	Data
 Title	Titolo
-Architecture	Architettura
-File	File
 No	N.
 Source	Origine
 Class	Classe
@@ -8376,6 +8613,9 @@ Signed	Firmati
 Failed	Non riusciti
 When	Quando
 FixText	Correzione
+Architecture	Architettura
+File	File
+Code	Codice
 Arch	Architettura
 Older	Pi&#xF9; vecchio
 Unpack an ISO first (page 1).	Estrai prima una ISO (pagina 1).
@@ -8408,6 +8648,7 @@ Source: {0}	Origine: {0}
 Editions: {0}	Edizioni: {0}
 {0} ticked	{0} spuntate
 asked after unpacking	chiesto dopo l'estrazione
+Automatic language downloads: {0}	Download automatici delle lingue: {0}
 Drivers: {0}   Signed packages: {1}	Driver: {0}   Pacchetti firmati: {1}
 Answer file: {0}   $OEM$: {1}	File di risposta: {0}   $OEM$: {1}
 Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.	Eseguire tutto ora? Richiede 30-90 minuti - il PC resta acceso finch&#xE9; non ha finito.
@@ -8448,7 +8689,6 @@ No answer file fixes to undo.	Nessuna correzione del file di risposta da annulla
 Put the answer file back the way it was before the fixes?	Riportare il file di risposta com'era prima delle correzioni?
 '{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?	'{0}' &#xE8; ancora in corso. Chiudere ora pu&#xF2; lasciare un'immagine montata (esegui la Pulizia la prossima volta). Chiudere comunque?
 Id	ID
-Code	Codice
 '@ }
     }
     return ''
@@ -8744,7 +8984,7 @@ function Complete-Work {
 function Set-Busy([bool]$On) {
     $labels = @{ Unpack = (T 'Unpack'); Analyze = (T 'Analyze'); Download = (T 'Download updates'); ScanHost = (T 'Driver scan'); CommitHost = (T 'Copy drivers')
                  ScanFolder = (T 'Folder scan'); CommitImport = (T 'Import drivers'); Sign = (T 'Re-sign drivers'); Service = (T 'Slipstream'); Build = (T 'Build ISO')
-                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
+                 All = (T 'Run everything'); Tools = (T 'Tools'); Clean = (T 'Clean up'); Check = (T 'Install check'); Fix = (T 'Apply fixes'); CheckIso = (T 'ISO check'); ConvertImage = (T 'Convert image'); ImportLanguage = (T 'Windows language packs'); DownloadLanguage = (T 'Windows language packs'); AutoLanguages = (T 'Windows language packs'); UupSearch = (T 'Find Windows builds'); UupLanguages = (T 'Load languages'); UupEditions = (T 'Load editions'); UupDownload = (T 'Download and create ISO') }
     $Script:JobLabel = $labels[$Script:JobName]
     if (-not $Script:JobLabel) { $Script:JobLabel = $Script:JobName }
     $Script:U.Pages.IsEnabled = -not $On
@@ -8946,7 +9186,8 @@ function Update-Ui {
         # 3 updates
         $U.UpdGrid.ItemsSource = (New-Table @('Kind', 'KB', 'Date', 'Title') @(foreach ($upd in @($S.Updates)) { , @($upd.Kind, $upd.KB, $upd.Date, $upd.Title) })).DefaultView
 
-        $U.LpGrid.ItemsSource = (New-Table @('Language', 'Architecture', 'Build', 'File') @(foreach ($lp in @($S.LanguagePacks | Where-Object { $_ })) { , @($lp.Language, $lp.Arch, $lp.Build, $lp.File) })).DefaultView
+        Update-AutomaticLanguagesUi
+        Update-LanguagePackQueue
 
         # 4 drivers
         $d = @($S.Drivers)
@@ -9066,11 +9307,36 @@ function Update-Tools {
     $cat = switch ($eng) { 'inf2cat' { $inf } 'makecat' { $mkc } default { $true } }
     $U.ToolsDot.Text = if ($osc -and $cat -and $sig) { '' } else { [string][char]0x25CF }
 }
+function Update-LanguagePackQueue {
+    $Script:U.LpGrid.ItemsSource = (New-Table @('Language', 'Architecture', 'Build', 'File') @(foreach ($lp in @($Script:S.LanguagePacks | Where-Object { $_ })) { , @($lp.Language, $lp.Arch, $lp.Build, $lp.File) })).DefaultView
+}
+function Save-LanguageDownloadPick {
+    $codes = @(foreach ($row in $Script:LpAutoTable.Rows) { if ($row['Use'] -eq $true) { [string]$row['Code'] } })
+    $Script:Cfg.LanguageDownloads = $codes
+    $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_ -and ($_.Source -ne 'uup-language' -or $_.Language -in $codes) })
+    Save-Settings; Save-State
+    Update-LanguagePackQueue
+}
+function Update-AutomaticLanguagesUi {
+    $wanted = @($Script:Cfg.LanguageDownloads)
+    $Script:LpAutoTable = New-Table @('Use:bool', 'Language', 'Code') @(foreach ($l in (Get-AutomaticLanguageList)) { , @(($l.Code -in $wanted), $l.Language, $l.Code) })
+    $Script:LpAutoTable.add_ColumnChanged({ param($sender, $ev) if (-not $Script:Loading -and $ev.Column.ColumnName -eq 'Use') { Save-LanguageDownloadPick } })
+    $Script:U.LpAutoGrid.ItemsSource = $Script:LpAutoTable.DefaultView
+    $Script:U.LpAutoTarget.Text = T 'Unpack an ISO and tick editions to detect the language-pack source.'
+    if ($Script:S.Unpacked -and @($Script:S.Selected).Count) {
+        try {
+            $target = Get-AutomaticLanguageTarget
+            $Script:U.LpAutoTarget.Text = (T 'Detected language-pack source: build {0} / {1}') -f $target.Build, $target.Arch
+        } catch { $Script:U.LpAutoTarget.Text = T 'Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.' }
+    }
+}
 function Save-EditionPick {
     $sel = @(foreach ($r in $Script:EdTable.Rows) { if ($r['Use'] -eq $true) { [int]$r['Index'] } })
     $Script:S.Selected = $sel
     Save-State
     Update-Status
+    $Script:Loading = $true
+    try { Update-AutomaticLanguagesUi } finally { $Script:Loading = $false }
 }
 # Page 5: the signing engine buttons and what the chosen engine does.
 function Update-SignEngine {
@@ -9293,6 +9559,7 @@ function Invoke-RunAllClick {
     $yes = T 'yes'; $no = T 'no'
     $lines = @((T 'Source: {0}') -f (Split-Path $iso -Leaf))
     $lines += (T 'Editions: {0}') -f $(if (@($Script:S.Selected).Count) { (T '{0} ticked') -f @($Script:S.Selected).Count } else { T 'asked after unpacking' })
+    $lines += (T 'Automatic language downloads: {0}') -f (@($Script:Cfg.LanguageDownloads | Where-Object { $_ }) -join ', ')
     $lines += (T 'Drivers: {0}   Signed packages: {1}') -f @($Script:S.Drivers).Count, @($Script:S.Signed | Where-Object { $_ }).Count
     $lines += (T 'Answer file: {0}   $OEM$: {1}') -f $(if ($Script:S.Unattend) { $yes } else { $no }), $(if ($Script:S.Oem) { $yes } else { $no })
     if (-not (Confirm-Ui ((T 'Run everything now? It takes 30-90 minutes - the PC is kept awake until it is done.') + "`n`n" + ($lines -join "`n")))) { return }
@@ -9470,6 +9737,10 @@ try {
     $U.EdNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:EdTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-EditionPick })
     # 3 updates
     $U.UpdBtn.Add_Click({ if (Test-Unpacked) { Start-Work 'Download' } })
+    $U.LpAutoGrid.Add_AutoGeneratingColumn({ param($s, $e) if ($e.PropertyName -eq 'Use') { $e.Cancel = $true } else { $e.Column.IsReadOnly = $true } })
+    $U.LpAutoAll.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:LpAutoTable.Rows) { $r['Use'] = $true }; $Script:Loading = $false; Save-LanguageDownloadPick })
+    $U.LpAutoNone.Add_Click({ $Script:Loading = $true; foreach ($r in $Script:LpAutoTable.Rows) { $r['Use'] = $false }; $Script:Loading = $false; Save-LanguageDownloadPick })
+    $U.LpAutoDownload.Add_Click({ if (Test-Unpacked) { Start-Work 'AutoLanguages' } })
     $U.LpDownload.Add_Click({
         if (Test-Unpacked) { Start-Work 'DownloadLanguage' @{ Url = $Script:U.LpUrl.Text.Trim(); Sha256 = $Script:U.LpHash.Text.Trim() } }
     })
@@ -9480,7 +9751,7 @@ try {
     })
     $U.LpRemove.Add_Click({
         $row = $Script:U.LpGrid.SelectedItem
-        if ($row) { $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
+        if ($row) { $Script:Cfg.LanguageDownloads = @($Script:Cfg.LanguageDownloads | Where-Object { $_ -ine [string]$row['Language'] }); Save-Settings; $Script:S.LanguagePacks = @($Script:S.LanguagePacks | Where-Object { $_.File -ne [string]$row['File'] }); Save-State; Update-Ui }
     })
     $U.LpHelp.Add_Click({ Start-Process 'https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-language-packs-to-windows' })
     # 4 drivers

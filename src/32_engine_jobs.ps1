@@ -311,6 +311,7 @@ function Invoke-Job([string]$Job, $A) {
             'Unpack'       { $Script:IsoPath = [string]$A.Iso; Invoke-Unpack }
             'Analyze'      { Invoke-Analyze }
             'ConvertImage' { Invoke-ImageConversion $A.Source $A.Destination $A.Mode }
+            'AutoLanguages' { Invoke-AutomaticLanguageDownloads }
             'ImportLanguage' { Add-LanguagePack $A.File }
             'DownloadLanguage' { Save-LanguagePack $A.Url $A.Sha256 }
             'Download'     { Invoke-Download -Auto }

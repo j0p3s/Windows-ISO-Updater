@@ -14,6 +14,7 @@ function Test-FileInUse([string]$Path) {
 }
 function Invoke-Build([switch]$Auto, [string]$OutIso) {
     Assert-Unpacked
+    Assert-AutomaticLanguagesServiced
     $S = $Script:S; $P = $Script:P; $Cfg = $Script:Cfg
     Write-Title 'Build ISO'
     $osc = Find-Oscdimg

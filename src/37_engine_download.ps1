@@ -7,6 +7,7 @@ function Find-UpdateJob($Ctx) {
 }
 function Invoke-Download([switch]$Auto) {
     Assert-Analyzed
+    Invoke-AutomaticLanguageDownloads
     $f = $Script:S.Family
     Write-Title "Download updates - $($f.Name) $($f.Arch)"
     if (-not $f.Supported) { throw "$($f.Name) is not supported for automatic updates." }

@@ -347,8 +347,6 @@
  "Put the answer file back the way it was before the fixes?": "¿Devolver el archivo de respuesta a como estaba antes de las correcciones?",
  "'{0}' is still running. Closing now can leave a mounted image behind (run Clean up next time). Close anyway?": "'{0}' todavía se está ejecutando. Cerrar ahora puede dejar una imagen montada (ejecute la Limpieza la próxima vez). ¿Cerrar de todos modos?",
  "Windows language packs": "Paquetes de idioma de Windows",
- "1. Unpack an ISO and tick editions. 2. Import a matching full language-pack CAB, or paste its direct Microsoft download link below. 3. Download Windows updates, then slipstream. Packs are checked for build and architecture and added to ticked Windows editions before cumulative updates. Windows Setup and recovery keep their original language.": "1. Extraiga un ISO y seleccione ediciones. 2. Importe un CAB de idioma compatible o pegue abajo su enlace directo de Microsoft. 3. Descargue las actualizaciones de Windows y después integre. Se comprueban la compilación y la arquitectura; los paquetes se añaden a las ediciones seleccionadas antes de las actualizaciones acumulativas. La instalación y la recuperación conservan su idioma original.",
- "Get full CAB packs for the same Windows release and architecture from Microsoft language-pack / Languages and Optional Features media. Some releases require licensed media access; there is no universal public CAB feed. LXP and Features on Demand are not supported here. Extra languages increase image size and servicing time; installed performance is usually unchanged.": "Obtenga paquetes CAB completos para la misma versión y arquitectura de Windows en los medios de idiomas / Idiomas y características opcionales de Microsoft. Algunas versiones requieren acceso a medios con licencia; no existe una fuente pública universal de CAB. Aquí no se admiten LXP ni características a petición. Los idiomas adicionales aumentan el tamaño de la imagen y el tiempo de mantenimiento; el rendimiento tras la instalación normalmente no cambia.",
  "Direct Microsoft CAB URL": "URL directo del CAB de Microsoft",
  "Expected SHA-256 (optional)": "SHA-256 esperado (opcional)",
  "Download and add language pack": "Descargar y añadir paquete de idioma",
@@ -385,5 +383,13 @@
  "Select a build, language and edition before downloading.": "Seleccione una compilación, un idioma y una edición antes de descargar.",
  "Windows ISO ready. Press Unpack and analyze to use it.": "ISO de Windows listo. Pulse Extraer y analizar para usarlo.",
  "Id": "ID",
- "Code": "Código"
+ "Code": "Código",
+ "Tick the extra Windows languages you want. The ISO build and architecture are detected automatically. Download updates, Slipstream and Run everything download missing packs through UUP dump, verify Microsoft's payload hashes and convert ESD packs to CAB when needed. No download links are required.": "Seleccione los idiomas adicionales de Windows. La compilación y la arquitectura del ISO se detectan automáticamente. Descargar actualizaciones, Integrar y Ejecutar todo descargan los paquetes que faltan mediante UUP dump, verifican los hashes de los archivos de Microsoft y convierten ESD a CAB cuando es necesario. No necesita enlaces de descarga.",
+ "Download selected language packs": "Descargar paquetes de idioma seleccionados",
+ "Packs are integrated into the ticked Windows editions before cumulative updates. Start with fresh media and download Windows updates before slipstreaming. Setup and recovery keep their original language. Optional speech, handwriting, OCR and LXP packages are outside this flow. Extra languages increase image size and servicing time.": "Los paquetes se integran en las ediciones seleccionadas antes de las actualizaciones acumulativas. Empiece con medios originales y descargue las actualizaciones de Windows antes de integrar. La instalación y la recuperación conservan su idioma original. No se incluyen voz, escritura a mano, OCR ni LXP opcionales. Más idiomas aumentan el tamaño de la imagen y el tiempo de mantenimiento.",
+ "Advanced: direct CAB download or import": "Avanzado: descargar CAB directo o importar",
+ "Unpack an ISO and tick editions to detect the language-pack source.": "Extraiga un ISO y seleccione ediciones para detectar la fuente de paquetes de idioma.",
+ "Detected language-pack source: build {0} / {1}": "Fuente de paquetes de idioma detectada: compilación {0} / {1}",
+ "Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.": "Las descargas automáticas no están disponibles para esta selección. Importe un CAB compatible o use un enlace directo de Microsoft.",
+ "Automatic language downloads: {0}": "Descargas automáticas de idiomas: {0}"
 }
