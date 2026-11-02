@@ -107,11 +107,7 @@ function Save-LanguagePack([string]$Url, [string]$Sha256) {
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $file = Join-Path $dir 'language.cab'
     try {
-        # Reject redirects: a Microsoft URL must not send this downloader to an arbitrary host.
-        $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-        if (-not (Test-Path -LiteralPath $curl)) { throw 'curl.exe is required for direct language-pack downloads (included with current Windows 10/11).' }
-        $code = Invoke-Exe $curl ("--fail --location --proto =https --max-redirs 0 --retry 2 --output $(Q $file) $(Q $Url)") -MergeErr
-        if ($code -ne 0 -or -not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -eq 0) { throw 'Language-pack download failed. Use a direct Microsoft CAB link.' }
+        Save-LanguageDownloadFile $Url $file
         if ($Sha256 -and (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $Sha256) { throw 'Language-pack SHA-256 mismatch. The download was not queued.' }
         Add-LanguagePack $file
     } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }

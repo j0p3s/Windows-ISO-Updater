@@ -74,15 +74,42 @@ function Save-AutomaticLanguagePayload($Payload) {
     $part = "$path.part"
     try {
         Write-Step "Downloading $($Payload.Name) ($(Format-Size $Payload.Size))"
-        $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-        if (-not (Test-Path -LiteralPath $curl -PathType Leaf)) { throw 'curl.exe is required for automatic language-pack downloads.' }
-        # Direct process invocation keeps percent-encoded UUP URLs away from cmd.exe expansion.
-        $code = Invoke-Exe $curl ("--fail --location --proto =https --max-redirs 0 --retry 2 --output $(Q $part) $(Q $Payload.Url)")
-        if ($code -ne 0 -or -not (Test-Path -LiteralPath $part -PathType Leaf)) { throw "Language-pack download failed (exit $code)." }
+        Save-LanguageDownloadFile $Payload.Url $part
         if ((Get-Item -LiteralPath $part).Length -ne $Payload.Size -or (Get-FileHash -LiteralPath $part -Algorithm SHA1).Hash -ine $Payload.Sha1) { throw 'Language-pack size / SHA-1 mismatch. The payload was not queued.' }
         Move-Item -LiteralPath $part -Destination $path -Force
         return $path
     } finally { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+}
+function Save-LanguageDownloadFile([string]$Url, [string]$Destination) {
+    $url = ConvertTo-LanguagePayloadUrl $Url
+    $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+    $code = -1
+    if (Test-Path -LiteralPath $curl -PathType Leaf) {
+        # No cmd.exe layer: signed, percent-encoded UUP URLs must stay byte-for-byte intact.
+        $code = Invoke-Exe $curl ("--fail --location --proto =https --max-redirs 0 --retry 2 --output $(Q $Destination) $(Q $url)")
+        if ($code -eq 0) {
+            if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or (Get-Item -LiteralPath $Destination).Length -eq 0) { throw 'Language-pack download failed: no payload file was produced.' }
+            return
+        }
+        # Do not retry HTTP refusals with a different client. Only certificate / CA errors
+        # get the Windows HTTPS fallback; both clients retain certificate verification.
+        if ($code -notin 60, 77) { throw "Language-pack download failed (exit $code)." }
+        Write-Warn "curl certificate validation failed (exit $code). Retrying with the Windows HTTPS downloader, with certificate validation enabled."
+    } else { Write-Info 'curl.exe is unavailable; using the Windows HTTPS downloader.' }
+    Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+    try {
+        # Windows PowerShell 5.1 uses Windows/.NET trust. Never disable certificate checks,
+        # allow an HTTP downgrade or follow a redirect to a different download location.
+        Invoke-WebRequest -Uri $url -OutFile $Destination -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 120 -ErrorAction Stop | Out-Null
+        if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or (Get-Item -LiteralPath $Destination).Length -eq 0) { throw 'No payload file was produced.' }
+    } catch {
+        Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+        $status = 0
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -ge 400) { throw "Windows HTTPS language-pack download failed: the download server returned HTTP $status. Retry the language download later to obtain a fresh Microsoft link; check proxy / server access if it remains unavailable." }
+        if ($code -in 60, 77) { throw "Language-pack HTTPS download failed with curl (exit $code) and the Windows downloader. Check the PC date/time, Windows root-certificate updates and any proxy or antivirus HTTPS-inspection certificate. Windows error: $($_.Exception.Message)" }
+        throw "Windows HTTPS language-pack download failed: $($_.Exception.Message)"
+    }
 }
 function Get-LanguageConversionTools {
     # Immutable upstream revision of the ESD2CAB tools used by the supplied reference script.

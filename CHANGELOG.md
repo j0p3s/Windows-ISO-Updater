@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fix language-pack downloads stopping immediately at curl certificate-validation errors (exit 60 / CA-file error 77): retry with the Windows HTTPS downloader using normal certificate validation. Keep HTTPS, reject redirects, remove partial output before retry, and retain byte-count / SHA-1 or optional SHA-256 checks before queuing any package. The same helper handles automatic and direct CAB downloads and can work when curl is unavailable.
+- Persist native stderr in `engine.log`, including the full curl certificate error that earlier logs only showed in Activity. If both clients fail, report Windows certificate / clock / HTTPS-inspection troubleshooting guidance. HTTP refusals do not trigger the alternate downloader.
+- Add regression coverage for certificate-error retries, missing curl, rejected or incorrect fallback payloads, cleanup, provider refusals and persistent TLS diagnostics. Native Windows certificate-store validation remains pending.
+
 ## v4.6.0 — 2026-11-02
 
 Automatic language-pack downloads for the ISO you are building. Choose the extra languages once; the app detects the Windows servicing base and architecture, fetches the matching packs and converts ESD packages into integration CABs when needed.

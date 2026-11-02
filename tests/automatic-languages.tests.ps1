@@ -62,12 +62,12 @@ try {
     function Save-Url($Url, $Dest) { $Script:ToolUrl = $Url; Set-Content -LiteralPath $Dest 'incorrect tool bytes' }
     Check 'conversion tools cannot run with a wrong pinned SHA-256' ((Failure { Get-LanguageConversionTools }) -match 'SHA-256 verification failed')
     Check 'conversion tool source uses an immutable upstream revision' ($Script:ToolUrl -match 'raw\.githubusercontent\.com/abbodi1406/BatUtil/[a-f0-9]{40}/')
-    $Script:Downloads = 0; $Script:WrongBytes = $false; $Script:DownloadFails = $false
+    $Script:Downloads = 0; $Script:WrongBytes = $false; $Script:DownloadFails = $false; $Script:CurlExit = 0
     function Invoke-Exe($File, $Arguments, [switch]$MergeErr, $WorkingDirectory) {
         if ($File -match 'curl\.exe$') {
             $Script:Downloads++
             if ($Arguments -match '--output "([^"]+)"') { [IO.File]::WriteAllBytes($Matches[1], $(if ($Script:WrongBytes) { [byte[]]@(1,2,3) } else { $Script:PayloadBytes })) }
-            if ($Script:DownloadFails) { return 22 }; return 0
+            if ($Script:DownloadFails) { return 22 }; return $Script:CurlExit
         }
         if ($File -match 'cabarc\.exe$') {
             $Script:CabWorkingDir = $WorkingDirectory
@@ -86,6 +86,46 @@ try {
     Check 'HTTP failure is propagated even if a partial output file exists' ((Failure { Save-AutomaticLanguagePayload $payload }) -match 'download failed')
     $Script:DownloadFails = $false
     $null = Save-AutomaticLanguagePayload $payload
+
+    # Reproduce the supplied v4.6.0 log: correct pt-PT discovery, then curl exit 60.
+    $Script:WebCalls = 0; $Script:WebFails = $false; $Script:WebWrongBytes = $false; $Script:WebHttpStatus = 0
+    function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing, [int]$MaximumRedirection, [int]$TimeoutSec, $ErrorAction) {
+        $Script:WebCalls++
+        $Script:WebParams = @{}; foreach ($k in $PSBoundParameters.Keys) { $Script:WebParams[$k] = $PSBoundParameters[$k] }
+        $Script:HadPartial = Test-Path -LiteralPath $OutFile
+        [IO.File]::WriteAllBytes($OutFile, $(if ($Script:WebWrongBytes) { [byte[]]@(4,5,6) } else { $Script:PayloadBytes }))
+        if ($Script:WebHttpStatus) {
+            $failure = New-Object Exception('HTTP request failed')
+            Add-Member -InputObject $failure -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Script:WebHttpStatus })
+            throw $failure
+        }
+        if ($Script:WebFails) { throw 'The remote certificate is invalid according to the validation procedure.' }
+    }
+    Remove-Item -LiteralPath $cached
+    $Script:CurlExit = 60
+    $retried = Save-AutomaticLanguagePayload $payload
+    Check 'curl exit 60 retries with Windows HTTPS and publishes only verified bytes' ($Script:WebCalls -eq 1 -and (Get-FileHash $retried -Algorithm SHA1).Hash -ieq $payload.Sha1)
+    Check 'partial curl output is removed before Windows retry' (-not $Script:HadPartial)
+    Check 'Windows retry keeps HTTPS and refuses redirects without skipping certificate checks' ($Script:WebParams.Uri -match '^https://' -and $Script:WebParams.MaximumRedirection -eq 0 -and -not $Script:WebParams.ContainsKey('SkipCertificateCheck'))
+    Remove-Item -LiteralPath $cached
+    $Script:CurlExit = 77
+    $null = Save-AutomaticLanguagePayload $payload
+    Check 'curl CA-file errors also use the verified Windows client' ($Script:WebCalls -eq 2)
+    Remove-Item -LiteralPath $cached
+    $Script:CurlExit = 60; $Script:WebWrongBytes = $true
+    Check 'a Windows retry cannot bypass expected payload size / SHA-1' ((Failure { Save-AutomaticLanguagePayload $payload }) -match 'size / SHA-1 mismatch' -and -not (Test-Path $cached))
+    $Script:WebWrongBytes = $false; $Script:WebFails = $true
+    Check 'both TLS clients failing produces certificate repair guidance' ((Failure { Save-AutomaticLanguagePayload $payload }) -match 'Windows root-certificate updates')
+    Check 'failed Windows retry removes all partial payload bytes' (-not (Test-Path "$cached.part") -and -not (Test-Path $cached))
+    $Script:WebFails = $false; $Script:WebHttpStatus = 403
+    $message = Failure { Save-AutomaticLanguagePayload $payload }
+    Check 'fallback HTTP errors get refresh / access guidance instead of certificate guidance' ($message -match 'HTTP 403' -and $message -match 'fresh Microsoft link' -and $message -notmatch 'root-certificate')
+    $Script:WebHttpStatus = 0; $Script:CurlExit = 22; $webCountBeforeRefusal = $Script:WebCalls
+    Check 'HTTP refusals never trigger the alternate downloader' ((Failure { Save-AutomaticLanguagePayload $payload }) -match 'exit 22' -and $Script:WebCalls -eq $webCountBeforeRefusal)
+    Remove-Item -LiteralPath (Join-Path $tmp 'System32/curl.exe')
+    $null = Save-AutomaticLanguagePayload $payload
+    Check 'Windows HTTPS downloader works when curl is missing' ($Script:WebCalls -eq $webCountBeforeRefusal + 1 -and (Test-Path $cached))
+    Set-Content (Join-Path $tmp 'System32/curl.exe') 'fake'; $Script:CurlExit = 0
 
     # The real ESD-to-CAB path uses DISM, expands compressed manifests, then cabinets the package.
     $Script:CabExit = 0; $Script:ExpandFails = $false; $Script:InfoLanguage = 'fr-FR'; $Script:InfoArch = 'x64'
