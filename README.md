@@ -1,8 +1,8 @@
 # Windows ISO Updater
 
-![version](https://img.shields.io/badge/version-4.7.0-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
+![version](https://img.shields.io/badge/version-4.7.1-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
 
-**Testing pre-release:** [v4.7.0](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.0) includes the language-download TLS fallback for Windows testing. [Download the testing app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.0/Windows-ISO-updater-GUI_v4.7.0.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.0/Windows-ISO-updater-GUI_v4.7.0.cmd.sha256), or use the [latest stable release](https://github.com/j0p3s/Windows-ISO-Updater/releases/latest).
+**Testing pre-release:** [v4.7.1](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.1) fixes automatic language downloads from Microsoft HTTP-only CDN endpoints while preserving mandatory size / SHA-1 checks. [Download the testing app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd.sha256), or use the [latest stable release](https://github.com/j0p3s/Windows-ISO-Updater/releases/latest).
 
 **One file. Double-click. Get a fully updated Windows 10 or Windows 11 ISO with your drivers, your signed NVIDIA mod, your answer file and your `$OEM$` folder baked in.**
 
@@ -51,7 +51,7 @@ Missing tools (`oscdimg`, `makecat`, `Inf2Cat`, `signtool`) are downloaded autom
 
 That's it. The new ISO lands in `C:\W10U\output` (the work folder can be changed under *Options*).
 
-The console line at start shows the version (`Starting Windows ISO Updater v4.7.0 ...`), then the console hides and the window opens.
+The console line at start shows the version (`Starting Windows ISO Updater v4.7.1 ...`), then the console hides and the window opens.
 
 **Updating:** download the new `Windows-ISO-updater-GUI_vX.X.X.cmd`, put it in the same folder and delete the old one (the file name changes with every version). Your settings, the `signing` folder and the work folder (unpacked media, updates, drivers) are kept — the tool picks up where you left off.
 
@@ -115,7 +115,7 @@ The source is preserved, existing destinations are refused, and an incomplete ex
 3. Use **Find and download updates**, **Slipstream** or **Run everything**. Missing language packs are downloaded automatically. **Download selected language packs** fetches just the packs immediately. Languages already present in all selected editions or in a verified queue are reused.
 4. Slipstream, then build the ISO. A downloaded matching cumulative update is still required to update the language resources. The ISO build stops if a requested language has not been integrated into the selected editions.
 
-Automatic discovery adapts the build / architecture source table and regional language selection from the supplied `win10_11lp.ps1` v2.13 reference. It queries UUP dump's `get.php` API and selects the **full Windows client display-language pack**, matching the complete culture code (`fr-FR` and `fr-CA` stay distinct). Package payloads come from allowed Microsoft download hosts over HTTPS, and their expected byte count and SHA-1 are verified before caching. If curl rejects a certificate (exit 60 / 77), the Windows HTTPS downloader retries with normal certificate validation and no redirects. If curl is missing, the Windows downloader is used directly. The source table covers Windows 10 1809, 1903/1909 and 2004–22H2, and Windows 11 21H2, 22H2/23H2, 24H2/25H2 and 26H1, for the architectures registered by that reference. It does not extend the app's existing support for Windows updates; unregistered builds need a manual matching CAB. Provider availability and package applicability are checked at runtime.
+Automatic discovery adapts the build / architecture source table and regional language selection from the supplied `win10_11lp.ps1` v2.13 reference. It queries UUP dump's `get.php` API and selects the **full Windows client display-language pack**, matching the complete culture code (`fr-FR` and `fr-CA` stay distinct). The API metadata is fetched over HTTPS. Package payloads come from allowed Microsoft download hosts using the exact URL supplied by that metadata, including HTTP-only CDN links. The app requires the expected byte count and SHA-1 and verifies both before caching or conversion; DISM checks package signatures during integration. It does not force HTTP-only endpoints to HTTPS, change their hostnames or follow redirects. Genuine HTTPS links keep normal certificate validation and the Windows downloader fallback for curl errors 60 / 77; they are never downgraded to HTTP. If curl is missing, the Windows downloader uses the same supplied URL. The source table covers Windows 10 1809, 1903/1909 and 2004–22H2, and Windows 11 21H2, 22H2/23H2, 24H2/25H2 and 26H1, for the architectures registered by that reference. It does not extend the app's existing support for Windows updates; unregistered builds need a manual matching CAB. Provider availability and package applicability are checked at runtime.
 
 A CAB can be integrated directly. If UUP supplies an ESD, the app applies its package image with DISM, expands compressed component manifests and creates a CAB automatically. `cabarc.exe` and `SxSExpand.exe` are downloaded on demand from an immutable revision of [abbodi1406/BatUtil's ESD2CAB tools](https://github.com/abbodi1406/BatUtil/tree/4c02e02d86d2f01e4ef556bc6a080382bd21cae4/ESD2CAB-CAB2ESD), with pinned SHA-256 checks. The tools are not bundled in this repository. Their attribution is kept in `tools\language-esd2cab\UPSTREAM.txt`. The usual DISM compatibility rules apply when converting an ESD on an older Windows host.
 
@@ -375,7 +375,7 @@ Logs: `C:\W10U\logs\engine.log` and `dism.log` (`dism-boot.log` for boot.wim whe
 
 | Problem | Fix |
 |---------|-----|
-| Language-pack download stops with curl exit 60 or 77 | The app retries through the Windows HTTPS downloader with certificate validation enabled. If both clients fail, check Windows date/time, trusted-root certificate updates and the certificate installed by any proxy / antivirus HTTPS inspection. `engine.log` records native certificate errors. TLS verification is never disabled |
+| Language-pack download stops with `SEC_E_WRONG_PRINCIPAL` on 4.7.0 | Update to 4.7.1: earlier versions forced Microsoft HTTP-only payload links to HTTPS. Automatic downloads now preserve the metadata URL and verify size / SHA-1. For an actual HTTPS source, certificate verification stays enabled; check the clock, trusted roots and proxy / antivirus inspection if both clients still fail. Manual CAB links remain HTTPS-only |
 | UUP dump API / package download fails | Check the Activity error and service availability with **Open UUP dump**. Retry later or select another build. The app does not work around service blocks |
 | UUP files download but no ISO is produced | Check the converter log, use a short work path such as `C:\W10U`, allow 35 GB free and choose a build with languages and editions available. A bare ESD / WIM needs complete setup media to become a bootable ISO |
 | Page 1 says **Not verified** for an ISO from Microsoft | Without internet, press **Check the ISO** again when online (a new ISO is only on microsoft.com). A Visual Studio subscription / Volume Licensing ISO: compare the SHA-256 with the one on that portal. An older ISO Microsoft no longer offers may be missing from the list. Otherwise download the ISO again from Microsoft (button on page 1) |
@@ -450,7 +450,8 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 | Version | Date | Highlights |
 |---|---|---|
-| **4.7.0 (pre-release)** | 2026-11-02 | Testing build: verified Windows HTTPS fallback for language-pack certificate errors, full native error logs and clearer download failure guidance |
+| **4.7.1 (pre-release)** | 2026-11-02 | Fix automatic language downloads from Microsoft HTTP-only CDN links; preserve signed URLs and enforce size / SHA-1 before use |
+| 4.7.0 (pre-release) | 2026-11-02 | Testing build: verified Windows HTTPS fallback for language-pack certificate errors, full native error logs and clearer download failure guidance |
 | 4.6.0 | 2026-11-02 | Automatic ISO-matched language-pack downloads, regional language selection, ESD-to-CAB conversion, verified caching and integration before updates |
 | 4.5.0 | 2026-11-01 | In-app Windows 10 / 11 downloads through UUP dump with automatic ISO creation; ESD / WIM conversions; Windows language packs |
 | 4.4.0 | 2026-10-31 | ISO check: an ISO made with the Media Creation Tool is recognised, and the Microsoft signatures of an ISO's setup and boot files are checked when its SHA-256 isn't listed |

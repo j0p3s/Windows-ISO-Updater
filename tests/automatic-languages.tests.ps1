@@ -46,7 +46,12 @@ try {
     $files['Microsoft-Windows-Client-LanguagePack-Package-amd64-fr-ca.cab'] = Entry
     $payload = Get-LanguagePayload $files 'fr-FR'
     Check 'full CAB preferred over ESD and optional language features excluded' ($payload.Name -eq $cabName -and $payload.Extension -eq '.cab')
-    Check 'Microsoft HTTP payload URLs upgraded to HTTPS without losing encoded query' ($payload.Url -match '^https://tlu\.dl\.delivery\.mp\.microsoft\.com/' -and $payload.Url -match 'a%3Db')
+    Check 'Microsoft HTTP payload URL preserved exactly instead of forcing unsupported HTTPS' ($payload.Url -ceq (Entry).url)
+    $signed = 'http://tlu.dl.delivery.mp.microsoft.com/filestreamingservice/files/123?P1=1&P4=a%2Bb%2Fc%3D%3D'
+    Check 'signed HTTP query and original hostname remain byte-for-byte intact' ((ConvertTo-LanguagePayloadUrl $signed -AllowHttp) -ceq $signed)
+    $secure = $signed.Replace('http:', 'https:')
+    Check 'HTTPS metadata links stay HTTPS without changing their signature' ((ConvertTo-LanguagePayloadUrl $secure) -ceq $secure)
+    Check 'HTTP refused without metadata integrity authorization' ((Failure { ConvertTo-LanguagePayloadUrl $signed }) -match 'expected size and SHA-1')
     $objectFiles = [pscustomobject]@{ $esdName = (Entry) }
     Check 'JSON object file maps supported as well as hashtables' ((Get-LanguagePayload $objectFiles 'fr-FR').Extension -eq '.esd')
     Check 'language region must match exactly, not just its language prefix' ((Failure { Get-LanguagePayload $objectFiles 'fr-CA' }) -match 'no full fr-CA')
@@ -54,6 +59,7 @@ try {
     Check 'missing expected payload hash rejected' ((Failure { Get-LanguagePayload $noHash 'fr-FR' }) -match 'invalid size / SHA-1')
     foreach ($url in @('https://evil.example/lp.cab', 'https://download.microsoft.com.evil.example/lp.cab', 'https://user@download.microsoft.com/lp.cab', 'https://download.microsoft.com:444/lp.cab', 'file:///tmp/lp.cab')) {
         Check "unsafe payload location refused: $url" ((Failure { ConvertTo-LanguagePayloadUrl $url }) -ne '')
+        Check "metadata authorization cannot allow an unsafe location: $url" ((Failure { ConvertTo-LanguagePayloadUrl $url -AllowHttp }) -ne '')
     }
     $item = $null; while ($Script:Sync.Queue.TryDequeue([ref]$item)) { }
     $exitCode = Invoke-Exe '/bin/pwd' '' -WorkingDirectory $tmp
@@ -66,6 +72,7 @@ try {
     function Invoke-Exe($File, $Arguments, [switch]$MergeErr, $WorkingDirectory) {
         if ($File -match 'curl\.exe$') {
             $Script:Downloads++
+            $Script:CurlArguments = $Arguments
             if ($Arguments -match '--output "([^"]+)"') { [IO.File]::WriteAllBytes($Matches[1], $(if ($Script:WrongBytes) { [byte[]]@(1,2,3) } else { $Script:PayloadBytes })) }
             if ($Script:DownloadFails) { return 22 }; return $Script:CurlExit
         }
@@ -77,6 +84,12 @@ try {
         throw 'Unexpected executable'
     }
     $cached = Save-AutomaticLanguagePayload $payload
+    Check 'automatic HTTP transport uses the original URL and disallows redirects' ($Script:CurlArguments.Contains('"' + $payload.Url + '"') -and $Script:CurlArguments -match '--proto =http,https --max-redirs 0' -and $Script:CurlArguments -notmatch '--insecure|--ssl-no-revoke')
+    $guarded = Join-Path $tmp 'unguarded.part'
+    $before = $Script:Downloads
+    Check 'HTTP transfer cannot start without expected integrity metadata' ((Failure { Save-LanguageDownloadFile $payload.Url $guarded }) -match 'expected size and SHA-1' -and $Script:Downloads -eq $before)
+    Check 'HTTP transfer cannot start with a missing expected size' ((Failure { Save-LanguageDownloadFile $payload.Url $guarded -ExpectedSha1 $sha }) -match 'invalid expected' -and $Script:Downloads -eq $before)
+    Check 'HTTP transfer cannot start with an invalid expected hash' ((Failure { Save-LanguageDownloadFile $payload.Url $guarded -ExpectedSha1 'invalid' -ExpectedSize $bytes.Length }) -match 'invalid expected' -and $Script:Downloads -eq $before)
     $again = Save-AutomaticLanguagePayload $payload
     Check 'verified payload cached without a second download' ($cached -eq $again -and $Script:Downloads -eq 1)
     Set-Content $cached 'tampered'; $Script:WrongBytes = $true
@@ -87,7 +100,22 @@ try {
     $Script:DownloadFails = $false
     $null = Save-AutomaticLanguagePayload $payload
 
-    # Reproduce the supplied v4.6.0 log: correct pt-PT discovery, then curl exit 60.
+    # Original HTTP metadata must also work when Windows has no curl.
+    Remove-Item -LiteralPath $cached, (Join-Path $tmp 'System32/curl.exe')
+    $Script:WebCalls = 0
+    function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing, [int]$MaximumRedirection, [int]$TimeoutSec, $ErrorAction) {
+        $Script:WebCalls++; $Script:OriginalUri = $Uri; $Script:RedirectLimit = $MaximumRedirection
+        [IO.File]::WriteAllBytes($OutFile, $Script:PayloadBytes)
+    }
+    $null = Save-AutomaticLanguagePayload $payload
+    Check 'Windows client preserves metadata HTTP URL and still verifies the downloaded bytes' ($Script:OriginalUri -ceq $payload.Url -and $Script:RedirectLimit -eq 0 -and (Get-FileHash $cached -Algorithm SHA1).Hash -ieq $sha)
+    Set-Content (Join-Path $tmp 'System32/curl.exe') 'fake'
+    Remove-Item -LiteralPath $cached
+    $Script:CurlExit = 60; $before = $Script:WebCalls
+    Check 'HTTP refusal never changes the protocol or retries with another client' ((Failure { Save-AutomaticLanguagePayload $payload }) -match 'exit 60' -and $Script:WebCalls -eq $before)
+
+    # Real HTTPS URLs keep the existing verified fallback; there is no HTTP downgrade.
+    $payload.Url = $secure
     $Script:WebCalls = 0; $Script:WebFails = $false; $Script:WebWrongBytes = $false; $Script:WebHttpStatus = 0
     function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing, [int]$MaximumRedirection, [int]$TimeoutSec, $ErrorAction) {
         $Script:WebCalls++
@@ -101,7 +129,6 @@ try {
         }
         if ($Script:WebFails) { throw 'The remote certificate is invalid according to the validation procedure.' }
     }
-    Remove-Item -LiteralPath $cached
     $Script:CurlExit = 60
     $retried = Save-AutomaticLanguagePayload $payload
     Check 'curl exit 60 retries with Windows HTTPS and publishes only verified bytes' ($Script:WebCalls -eq 1 -and (Get-FileHash $retried -Algorithm SHA1).Hash -ieq $payload.Sha1)
