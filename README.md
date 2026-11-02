@@ -2,7 +2,7 @@
 
 ![version](https://img.shields.io/badge/version-4.7.1-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
 
-**Testing pre-release:** [v4.7.1](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.1) fixes automatic language downloads from Microsoft HTTP-only CDN endpoints while preserving mandatory size / SHA-1 checks. [Download the testing app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd.sha256), or use the [latest stable release](https://github.com/j0p3s/Windows-ISO-Updater/releases/latest).
+**Latest stable release:** [v4.7.1](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.1) fixes automatic language downloads from Microsoft HTTP-only CDN endpoints while preserving mandatory size / SHA-1 checks. [Download the app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd.sha256), or get the [complete release ZIP](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-Updater-v4.7.1.zip). See the [changelog](CHANGELOG.md) for changes and upgrade steps.
 
 **One file. Double-click. Get a fully updated Windows 10 or Windows 11 ISO with your drivers, your signed NVIDIA mod, your answer file and your `$OEM$` folder baked in.**
 
@@ -450,7 +450,7 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 | Version | Date | Highlights |
 |---|---|---|
-| **4.7.1 (pre-release)** | 2026-11-02 | Fix automatic language downloads from Microsoft HTTP-only CDN links; preserve signed URLs and enforce size / SHA-1 before use |
+| **4.7.1** | 2026-11-02 | Fix automatic language downloads from Microsoft HTTP-only CDN links; preserve signed URLs and enforce size / SHA-1 before use |
 | 4.7.0 (pre-release) | 2026-11-02 | Testing build: verified Windows HTTPS fallback for language-pack certificate errors, full native error logs and clearer download failure guidance |
 | 4.6.0 | 2026-11-02 | Automatic ISO-matched language-pack downloads, regional language selection, ESD-to-CAB conversion, verified caching and integration before updates |
 | 4.5.0 | 2026-11-01 | In-app Windows 10 / 11 downloads through UUP dump with automatic ISO creation; ESD / WIM conversions; Windows language packs |
