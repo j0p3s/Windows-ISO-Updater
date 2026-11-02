@@ -1,10 +1,30 @@
 # Changelog
 
-## Unreleased
+## v4.7.0 — 2026-11-02
 
-- Fix language-pack downloads stopping immediately at curl certificate-validation errors (exit 60 / CA-file error 77): retry with the Windows HTTPS downloader using normal certificate validation. Keep HTTPS, reject redirects, remove partial output before retry, and retain byte-count / SHA-1 or optional SHA-256 checks before queuing any package. The same helper handles automatic and direct CAB downloads and can work when curl is unavailable.
-- Persist native stderr in `engine.log`, including the full curl certificate error that earlier logs only showed in Activity. If both clients fail, report Windows certificate / clock / HTTPS-inspection troubleshooting guidance. HTTP refusals do not trigger the alternate downloader.
-- Add regression coverage for certificate-error retries, missing curl, rejected or incorrect fallback payloads, cleanup, provider refusals and persistent TLS diagnostics. Native Windows certificate-store validation remains pending.
+**Testing pre-release.** This build contains the language-pack download fix from PR #18 and is intended to verify the reported Windows curl certificate failure. Native Windows confirmation is still pending. The current stable release remains the default download.
+
+**Upgrading for testing:** download `Windows-ISO-updater-GUI_v4.7.0.cmd` and its `.sha256`, verify the checksum and put the app beside your existing settings / tools. Keep the previous app if you want to return to it. Settings, signing certificates, cached packages and work folders are preserved. Use fresh unpacked media before adding new languages to an image already serviced.
+
+### Fixed — language-pack certificate failures
+- When automatic or direct-CAB downloads stop at curl certificate / CA-file errors **60** or **77**, retry with the Windows HTTPS downloader using normal certificate validation. The Windows client is also used if curl is unavailable.
+- Keep HTTPS and reject redirects. Remove partial curl output before retrying; retain expected payload size / SHA-1 or optional SHA-256 checks before queuing any package. Certificate verification and package hashes are not disabled.
+- HTTP refusals do not trigger another download client. If the Windows retry returns an HTTP error, report that status with retry / fresh-link guidance; if both clients fail certificate checks, provide Windows clock, trusted-root and HTTPS-inspection troubleshooting guidance.
+
+### Improved — diagnostics
+- Persist native standard-error output in `engine.log`, including the full curl certificate message previously visible only in Activity. ISO conversion / integration errors remain separate from download failures.
+- Reuse the same verified download helper for automatic language packs and advanced direct-CAB downloads.
+
+### Release and validation
+- Add a **prerelease** option to the release workflow. Testing releases use GitHub's pre-release flag and `--latest=false`, preserving the stable download. Stable release behavior remains unchanged.
+- Update the app version, generated `.cmd`, README testing links, bug-report form, contributing instructions and changelog for 4.7.0.
+- **18 automated suites / 709 checks pass.** Tests cover certificate retries, missing curl, provider refusals, corrupt / incomplete fallback payloads, cleanup and persistent TLS diagnostics. The app build is reproducible, ASCII and CRLF.
+- The Microsoft Portuguese language payload from the reported case was downloaded independently over verified HTTPS and matched its expected SHA-1. Native Windows certificate-store, conversion and WPF validation remain pending; the pre-release is provided for that testing.
+
+### What to test
+1. Select the same Windows ISO / editions and Portuguese (Portugal) under Windows updates → Windows language packs, then choose Download selected language packs.
+2. If curl reports error 60 / 77, confirm the Windows HTTPS retry completes and the pack is verified and queued. Download updates, then slipstream using fresh media.
+3. If it still fails, share the new `engine.log` and, if conversion or integration started, `dism.log`. Remove private paths or personal information before sharing logs.
 
 ## v4.6.0 — 2026-11-02
 

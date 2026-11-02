@@ -12,6 +12,11 @@ on:
       title:
         description: 'Release title after "vX.Y.Z - " (optional)'
         required: false
+      prerelease:
+        description: 'Publish a testing pre-release without replacing the latest stable release'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -55,6 +60,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           TITLE: ${{ inputs.title }}
+          PRERELEASE: ${{ inputs.prerelease }}
           GH_TOKEN: ${{ github.token }}
         run: |
           awk -v head="## v$VERSION " 'index($0, head) == 1 { on = 1; next } on && /^## v/ { exit } on { print }' CHANGELOG.md > notes.md
@@ -64,5 +70,7 @@ jobs:
           sha256sum "$cmd" > "$cmd.sha256"
           name="v$VERSION"
           if [ -n "$TITLE" ]; then name="v$VERSION — $TITLE"; fi
+          release_flags=(--latest)
+          if [ "$PRERELEASE" = "true" ]; then release_flags=(--prerelease --latest=false); fi
           gh release create "v$VERSION" "$cmd" "$cmd.sha256" \
-            --target "$GITHUB_SHA" --title "$name" --notes-file notes.md --latest
+            --target "$GITHUB_SHA" --title "$name" --notes-file notes.md "${release_flags[@]}"

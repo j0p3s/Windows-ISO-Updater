@@ -32,9 +32,9 @@ Open an issue with the **Bug report** form. The most useful things to include:
 1. In `src/`, set the version in `10_engine_head.ps1` (`$Script:AppVersion`) — the only place: the build puts it in the file name, the header and the window. Also update the README badge and start line, and the bug report form.
 2. Add a `## vX.Y.Z — date` entry to `CHANGELOG.md`. It becomes the release notes.
 3. Rebuild, run the tests and merge to `main`.
-4. Go to **Actions → release → Run workflow** on `main`. Enter the version and, optionally, a title.
+4. Go to **Actions → release → Run workflow** on `main`. Enter the version and, optionally, a title. For a testing build, enable **prerelease**; it is published as a pre-release without replacing the latest stable download.
 
-The workflow checks the version and the changelog entry, rebuilds and tests. It then creates the tag and the GitHub release, with `Windows-ISO-updater-GUI_vX.Y.Z.cmd` and its `.sha256` attached.
+The workflow checks the version and the changelog entry, rebuilds and tests. It then creates the tag and the GitHub release, with `Windows-ISO-updater-GUI_vX.Y.Z.cmd` and its `.sha256` attached. Stable releases become latest; testing pre-releases leave the existing stable release as latest.
 
 ## Code notes
 
