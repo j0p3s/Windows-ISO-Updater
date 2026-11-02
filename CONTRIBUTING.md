@@ -36,6 +36,12 @@ Open an issue with the **Bug report** form. The most useful things to include:
 
 The workflow checks the version and the changelog entry, rebuilds and tests. It then creates the tag and the GitHub release, with `Windows-ISO-updater-GUI_vX.Y.Z.cmd` and its `.sha256` attached. Stable releases become latest; testing pre-releases leave the existing stable release as latest.
 
+### Promoting an existing pre-release
+
+Update the README and the version's changelog entry to stable status, and merge the documentation changes to `main`. Rebuild and verify that the app still matches the published checksum. Keep the existing version, tag and app bytes; do not run the release-creation workflow again for an existing tag. Edit the existing GitHub release to remove the pre-release flag, set it as latest, and replace its title and notes with the stable information.
+
+Refresh the complete release ZIP and attach an updated source ZIP if the documentation changed after tagging. Include SHA-256 checksums for the downloadable bundles. GitHub's generated source archives continue to represent the original tag; identify the documentation commit in the release notes so the updated source bundle can be reproduced.
+
 ## Code notes
 
 - The engine runs under **Windows PowerShell 5.1**: variable names are case-insensitive (`$u` and `$U` are the same variable), `ConvertFrom-Json` does not unroll top-level arrays, and stderr of console tools becomes an error under `$ErrorActionPreference = 'Stop'` — use `Invoke-Native` / `Invoke-Exe` for console tools.

@@ -2,7 +2,7 @@
 
 ## v4.7.1 — 2026-11-02
 
-**Testing pre-release.** Fixes the automatic Portuguese language-pack download that still failed in 4.7.0 with `SEC_E_WRONG_PRINCIPAL`. The existing interface, settings and work folders are preserved. The latest stable release stays unchanged.
+**Stable release.** Fixes the automatic Portuguese language-pack download that still failed in 4.7.0 with `SEC_E_WRONG_PRINCIPAL`. Version 4.7.1 is now the latest stable download. The existing interface, settings and work folders are preserved.
 
 ### Fixed — Microsoft HTTP-only language-pack endpoints
 - Preserve the exact payload URL supplied by the HTTPS UUP metadata. The previous code forced HTTP links to HTTPS; Microsoft CDN endpoints such as `tlu.dl.delivery.mp.microsoft.com` can reject that with a certificate-name mismatch. Switching between HTTPS download clients could not correct the URL.
@@ -10,13 +10,15 @@
 - Keep genuine HTTPS URLs and normal certificate validation. No certificate check is disabled and no HTTPS source is downgraded to HTTP. Advanced manual CAB downloads continue to require HTTPS.
 - Use the same metadata URL and mandatory integrity checks when curl is absent. Log when Microsoft supplies an HTTP payload URL; keep signed query parameters intact.
 
-### Validation and documentation
+### Release, validation and documentation
+- Promote the existing 4.7.1 pre-release to a full release and mark it latest. Keep the tested application and its published SHA-256 unchanged; update the README, changelog, release title and release notes to stable status.
+- Include the single-file app and checksum, a complete release ZIP with documentation, and an updated source ZIP with the stable documentation. The original Git tag and GitHub-generated source archives retain the tested release snapshot; the attached source ZIP includes the later documentation update.
 - The original Microsoft URL for the reported pt-PT / build 19041 / x64 pack downloaded successfully: **23,659,629 bytes**, SHA-1 `5fc91fadd2aa3bef71d7a100ebbe0959d9c19604`, matching the HTTPS metadata. The new PowerShell download path was also exercised live on Linux; native Windows conversion / integration remains a testing step.
 - **18 automated suites / 723 checks pass.** Update the README, security documentation, app version, generated single-file app and bug-report form. Regression checks cover original URL preservation, HTTP metadata requirements, size / hash rejection, missing curl, HTTPS fallback and redirect refusal.
 
-### Retest
+### Upgrade and usage
 1. Download `Windows-ISO-updater-GUI_v4.7.1.cmd` and its `.sha256`, verify the checksum and place the app beside your existing settings / tools.
-2. Resume the same work folder and download Portuguese (Portugal) again. The pack should download and pass verification before ESD-to-CAB conversion starts.
+2. Resume the same work folder and download the selected language packs. Payloads must pass size / SHA-1 verification before ESD-to-CAB conversion starts.
 3. Integrate into fresh unpacked media if the image was already serviced. If conversion / integration fails, share the new `engine.log` and `dism.log` with private paths removed.
 
 ## v4.7.0 — 2026-11-02
