@@ -38,7 +38,7 @@ The workflow checks the version and the changelog entry, rebuilds and tests. It 
 
 ### Promoting an existing pre-release
 
-Update the README and the version's changelog entry to stable status, and merge the documentation changes to `main`. Rebuild and verify that the app still matches the published checksum. Keep the existing version, tag and app bytes; do not run the release-creation workflow again for an existing tag. Edit the existing GitHub release to remove the pre-release flag, set it as latest, and replace its title and notes with the stable information.
+Update the README and the version's changelog entry to stable status, and merge the documentation changes to `main`. Rebuild and verify that the app still matches the published checksum. Keep the existing version, tag and app bytes; do not run the release-creation workflow again for an existing tag. Run **Actions → promote-release** on `main` with the existing version. The workflow verifies the published app and checksum against the rebuilt app, uploads current documentation / source bundles and checksums, then removes the pre-release flag and marks the release latest. It can be rerun to complete an interrupted promotion.
 
 Refresh the complete release ZIP and attach an updated source ZIP if the documentation changed after tagging. Include SHA-256 checksums for the downloadable bundles. GitHub's generated source archives continue to represent the original tag; identify the documentation commit in the release notes so the updated source bundle can be reproduced.
 

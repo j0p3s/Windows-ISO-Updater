@@ -1,0 +1,56 @@
+name: promote-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing release version to promote, e.g. 4.7.1'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate existing release and unchanged application
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo 'Run promotion from main'; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Version must be X.Y.Z'; exit 1; }
+          grep -q "^\$Script:AppVersion   = '$VERSION'" src/10_engine_head.ps1
+          gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx false
+          cmd="Windows-ISO-updater-GUI_v$VERSION.cmd"
+          existing="$RUNNER_TEMP/existing-release"
+          mkdir -p "$existing"
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "$cmd" --pattern "$cmd.sha256" --dir "$existing"
+          (cd "$existing" && sha256sum --check "$cmd.sha256")
+          cmp "$cmd" "$existing/$cmd"
+          python3 src/build.py
+          [ -z "$(git status --porcelain)" ] || { echo 'Generated app must match committed sources'; exit 1; }
+
+      - name: Package current documentation and sources
+        run: |
+          set -euo pipefail
+          tag_commit=$(git rev-parse "refs/tags/v$VERSION^{commit}")
+          python3 scripts/package_release.py --version "$VERSION" --source-revision "$GITHUB_SHA" --app-revision "$tag_commit" --output "$RUNNER_TEMP/stable-release"
+          (cd "$RUNNER_TEMP/stable-release" && sha256sum --check SHA256SUMS)
+
+      - name: Upload files and mark the release stable and latest
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stable-release"
+          gh release upload "v$VERSION" "Windows-ISO-Updater-v$VERSION.zip" "Windows-ISO-Updater-v$VERSION-source.zip" CHANGELOG.md RELEASE-NOTES.md SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --title "v$VERSION — Windows ISO Updater" --notes-file RELEASE-NOTES.md

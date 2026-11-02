@@ -11,6 +11,7 @@
 - Use the same metadata URL and mandatory integrity checks when curl is absent. Log when Microsoft supplies an HTTP payload URL; keep signed query parameters intact.
 
 ### Release, validation and documentation
+- Add a promotion workflow that verifies the existing app and rebuild, packages current documentation / sources, and promotes the existing release through GitHub Actions.
 - Promote the existing 4.7.1 pre-release to a full release and mark it latest. Keep the tested application and its published SHA-256 unchanged; update the README, changelog, release title and release notes to stable status.
 - Include the single-file app and checksum, a complete release ZIP with documentation, and an updated source ZIP with the stable documentation. The original Git tag and GitHub-generated source archives retain the tested release snapshot; the attached source ZIP includes the later documentation update.
 - The original Microsoft URL for the reported pt-PT / build 19041 / x64 pack downloaded successfully: **23,659,629 bytes**, SHA-1 `5fc91fadd2aa3bef71d7a100ebbe0959d9c19604`, matching the HTTPS metadata. The new PowerShell download path was also exercised live on Linux; native Windows conversion / integration remains a testing step.
