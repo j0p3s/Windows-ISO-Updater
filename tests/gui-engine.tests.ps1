@@ -35,6 +35,11 @@ $q = Drain
 Check "Invoke-Exe exit code 3 ($code)" ($code -eq 3)
 Check 'Invoke-Exe streams lines + stderr, progress not logged' (($q | % { $_[1].Trim() }) -join '|' -eq 'start|line two|oops')
 Check 'progress reset after the process' ($Script:Sync.Pct -eq -1)
+$Script:LogFile = Join-Path $tmp 'engine.log'
+$null = Invoke-Exe '/bin/sh' '-c "echo ''curl: (60) SSL certificate problem: unable to get local issuer certificate'' 1>&2; exit 60"'
+Check 'native stderr certificate details are persisted in engine.log' ((Get-Content -LiteralPath $Script:LogFile -Raw) -match 'STDERR curl: \(60\) SSL certificate problem: unable to get local issuer certificate')
+$Script:LogFile = $null
+$null = Drain
 
 # --- settings / state with the new keys
 $Script:Cfg = Get-DefaultSettings; $Script:Cfg.WorkDir = Join-Path $tmp 'work'

@@ -47,7 +47,12 @@ function Invoke-Exe([string]$File, [string]$Arguments, [switch]$MergeErr, [strin
     if ($sb.Length -gt 0) { Push-ExeLine $sb.ToString() }
     $p.WaitForExit()
     if ($errTask) {
-        foreach ($l in ($errTask.Result -split "`r?`n")) { if ($l.Trim()) { Write-Host "       $($l.Trim())" -ForegroundColor DarkYellow } }
+        foreach ($l in ($errTask.Result -split "`r?`n")) {
+            if ($l.Trim()) {
+                Add-Log ('STDERR ' + $l.Trim())
+                Write-Host "       $($l.Trim())" -ForegroundColor DarkYellow
+            }
+        }
     }
     if ($Script:Sync) { $Script:Sync.Pct = -1 }
     return [int]$p.ExitCode
