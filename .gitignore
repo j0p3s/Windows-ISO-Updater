@@ -21,6 +21,3 @@ tests/v2body.ps1
 tests/findings.txt
 __pycache__/
 .isohash-cache/
-# session handoff notes
-HANDOFF.md
-handoff.md
