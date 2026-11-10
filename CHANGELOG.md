@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v4.7.2 — 2026-11-10
+
+**Stable release.** Changes the project license from MIT to the GNU GPL v3 or later. The app works exactly like 4.7.1; settings and work folders are kept. To upgrade, download the new `.cmd` and use it in place of the old one.
 
 ### License
 - The project is now licensed under the GNU General Public License v3 or later (GPL-3.0-or-later) instead of MIT. Modified versions that are distributed must keep their source available under the same license. Versions up to and including 4.7.1 remain available under the MIT license.
