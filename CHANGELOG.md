@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### License
+- The project is now licensed under the GNU General Public License v3 or later (GPL-3.0-or-later) instead of MIT. Modified versions that are distributed must keep their source available under the same license. Versions up to and including 4.7.1 remain available under the MIT license.
+
 ## v4.7.1 — 2026-11-02
 
 **Stable release.** Fixes the automatic Portuguese language-pack download that still failed in 4.7.0 with `SEC_E_WRONG_PRINCIPAL`. Version 4.7.1 is now the latest stable download. The existing interface, settings and work folders are preserved.
