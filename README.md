@@ -558,3 +558,6 @@ The app has no telemetry and does not upload your drivers, answer files, signing
 This project's own code and documentation are under the [GNU General Public License, version 3 or later](LICENSE) (GPL-3.0-or-later). You may use, copy, modify and share it; if you distribute a modified version, you must make its source available under the same license. Versions up to and including 4.7.1 were released under the MIT license and stay available under it. The license doesn't cover Windows, Microsoft's updates and tools, or the drivers the tool works with. Those keep their own license terms (see above).
 
 The signing speed-ups come from [NVIDIA Modded Drivers Signer](https://github.com/j0p3s/nvidia-modded-drivers-signer), by the same author (MIT license, which is compatible with the GPL).
+
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/j0p3s)
