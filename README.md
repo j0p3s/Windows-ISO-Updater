@@ -1,8 +1,8 @@
 # Windows ISO Updater
 
-![version](https://img.shields.io/badge/version-4.7.1-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-GPL--3.0-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
+![version](https://img.shields.io/badge/version-4.7.2-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-GPL--3.0-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
 
-**Latest stable release:** [v4.7.1](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.1) fixes automatic language downloads from Microsoft HTTP-only CDN endpoints while preserving mandatory size / SHA-1 checks. [Download the app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd.sha256), or get the [complete release ZIP](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-Updater-v4.7.1.zip). See the [changelog](CHANGELOG.md) for changes and upgrade steps.
+**Latest stable release:** [v4.7.2](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.2) moves the project to the GNU GPL v3 or later; the app works the same as 4.7.1. [Download the app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.2/Windows-ISO-updater-GUI_v4.7.2.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.2/Windows-ISO-updater-GUI_v4.7.2.cmd.sha256). See the [changelog](CHANGELOG.md) for changes and upgrade steps.
 
 **One file. Double-click. Get a fully updated Windows 10 or Windows 11 ISO with your drivers, your signed NVIDIA mod, your answer file and your `$OEM$` folder baked in.**
 
@@ -51,7 +51,7 @@ Missing tools (`oscdimg`, `makecat`, `Inf2Cat`, `signtool`) are downloaded autom
 
 That's it. The new ISO lands in `C:\W10U\output` (the work folder can be changed under *Options*).
 
-The console line at start shows the version (`Starting Windows ISO Updater v4.7.1 ...`), then the console hides and the window opens.
+The console line at start shows the version (`Starting Windows ISO Updater v4.7.2 ...`), then the console hides and the window opens.
 
 **Updating:** download the new `Windows-ISO-updater-GUI_vX.X.X.cmd`, put it in the same folder and delete the old one (the file name changes with every version). Your settings, the `signing` folder and the work folder (unpacked media, updates, drivers) are kept — the tool picks up where you left off.
 
@@ -450,7 +450,8 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 | Version | Date | Highlights |
 |---|---|---|
-| **4.7.1** | 2026-11-02 | Fix automatic language downloads from Microsoft HTTP-only CDN links; preserve signed URLs and enforce size / SHA-1 before use |
+| **4.7.2** | 2026-11-10 | License changed from MIT to GPL-3.0-or-later; no changes to how the app works |
+| 4.7.1 | 2026-11-02 | Fix automatic language downloads from Microsoft HTTP-only CDN links; preserve signed URLs and enforce size / SHA-1 before use |
 | 4.7.0 (pre-release) | 2026-11-02 | Testing build: verified Windows HTTPS fallback for language-pack certificate errors, full native error logs and clearer download failure guidance |
 | 4.6.0 | 2026-11-02 | Automatic ISO-matched language-pack downloads, regional language selection, ESD-to-CAB conversion, verified caching and integration before updates |
 | 4.5.0 | 2026-11-01 | In-app Windows 10 / 11 downloads through UUP dump with automatic ISO creation; ESD / WIM conversions; Windows language packs |

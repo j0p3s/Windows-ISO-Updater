@@ -4,9 +4,9 @@
 - Maintain and release the Windows ISO Updater: one self-elevating `.cmd` (batch + PowerShell/WPF GUI) that updates a Windows 10/11 ISO (updates, drivers, re-signing, rebuild). The latest work added `CLAUDE.md` so future sessions start productive.
 
 ## 2. Current status
-- `main` = `32681da` (PR #23 squash-merged: adds `CLAUDE.md`). CI was green.
-- App version **4.7.1** (stable; tags v4.7.0/v4.7.1 exist). Nothing in progress, no open PRs from this session, no scheduled check-ins, no PR subscriptions.
-- Local branch `ccr-0ebf53e0-gw0121` (at `59ed2dd`) holds pre-squash history; content equals `main`.
+- License changed from MIT to GPL-3.0-or-later (PR #25, squash-merged). Versions up to 4.7.1 stay MIT.
+- App version **4.7.2** (license-only release; app behavior same as 4.7.1). Released with Actions -> release after the version-bump PR is merged.
+- Local branch `ccr-0ebf53e0-gw0121` is reused per the rule below.
 
 ## 3. Key decisions
 - Replies to the owner in **Portuguese**.
