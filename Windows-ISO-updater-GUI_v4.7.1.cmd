@@ -11,6 +11,9 @@
 ::  - rebuilds a bootable BIOS + UEFI ISO
 ::  Tools it needs (oscdimg, Inf2Cat, signtool) are downloaded automatically.
 ::  Just double-click this file.
+::  Copyright (c) 2026 j0p3s. Free software under the GNU General Public
+::  License v3 or later (GPL-3.0-or-later), WITHOUT ANY WARRANTY - see LICENSE:
+::  https://github.com/j0p3s/Windows-ISO-Updater/blob/main/LICENSE
 :: ===========================================================================
 setlocal EnableExtensions DisableDelayedExpansion
 title Windows ISO Updater

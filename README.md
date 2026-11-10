@@ -1,6 +1,6 @@
 # Windows ISO Updater
 
-![version](https://img.shields.io/badge/version-4.7.1-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-MIT-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
+![version](https://img.shields.io/badge/version-4.7.1-2F9BFF) ![platform](https://img.shields.io/badge/Windows-10%20%7C%2011-8B5CF6) ![license](https://img.shields.io/badge/license-GPL--3.0-3DDC97) [![tests](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml/badge.svg)](https://github.com/j0p3s/Windows-ISO-Updater/actions/workflows/tests.yml)
 
 **Latest stable release:** [v4.7.1](https://github.com/j0p3s/Windows-ISO-Updater/releases/tag/v4.7.1) fixes automatic language downloads from Microsoft HTTP-only CDN endpoints while preserving mandatory size / SHA-1 checks. [Download the app](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd) and its [SHA-256](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-updater-GUI_v4.7.1.cmd.sha256), or get the [complete release ZIP](https://github.com/j0p3s/Windows-ISO-Updater/releases/download/v4.7.1/Windows-ISO-Updater-v4.7.1.zip). See the [changelog](CHANGELOG.md) for changes and upgrade steps.
 
@@ -476,7 +476,7 @@ The full list of changes is in **[CHANGELOG.md](CHANGELOG.md)**; every release o
 
 ## Contributing
 
-Bug reports and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems: [SECURITY.md](SECURITY.md). By sending a pull request you agree that your contribution is published under this project's [MIT license](LICENSE).
+Bug reports and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems: [SECURITY.md](SECURITY.md). By sending a pull request you agree that your contribution is published under this project's license, the [GNU GPL v3 or later](LICENSE).
 
 ---
 
@@ -540,7 +540,7 @@ Microsoft, Windows, Windows PE, DISM, Microsoft Defender (Windows Defender) and 
 
 ### No warranty
 
-The software is provided **"as is", without warranty of any kind**, under the [MIT license](LICENSE). The authors are not liable for any damage or loss from using it, including:
+The software is provided **"as is", without warranty of any kind**, under the [GNU General Public License v3](LICENSE). The authors are not liable for any damage or loss from using it, including:
 
 - lost data (an answer file can wipe disks);
 - PCs that don't boot or install;
@@ -555,6 +555,6 @@ The app has no telemetry and does not upload your drivers, answer files, signing
 
 ## License
 
-This project's own code and documentation are under the [MIT license](LICENSE). The license doesn't cover Windows, Microsoft's updates and tools, or the drivers the tool works with. Those keep their own license terms (see above).
+This project's own code and documentation are under the [GNU General Public License, version 3 or later](LICENSE) (GPL-3.0-or-later). You may use, copy, modify and share it; if you distribute a modified version, you must make its source available under the same license. Versions up to and including 4.7.1 were released under the MIT license and stay available under it. The license doesn't cover Windows, Microsoft's updates and tools, or the drivers the tool works with. Those keep their own license terms (see above).
 
-The signing speed-ups come from [NVIDIA Modded Drivers Signer](https://github.com/j0p3s/nvidia-modded-drivers-signer), by the same author and also under MIT.
+The signing speed-ups come from [NVIDIA Modded Drivers Signer](https://github.com/j0p3s/nvidia-modded-drivers-signer), by the same author (MIT license, which is compatible with the GPL).
