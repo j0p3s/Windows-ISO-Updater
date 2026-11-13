@@ -6,10 +6,11 @@
 ## 2. Current status
 - App version **4.7.3**: adds a heart button (`CoffeeBtn`, glyph `&#xE00B;`, colour `#FFC857`) left of the theme button in the title bar; it opens `$Script:CoffeeUrl` = `https://buymeacoffee.com/j0p3s` (defined in `src/10_engine_head.ps1`, click handler in `src/55_gui_main.ps1`). Tooltip / accessible name "Buy me a coffee - support this project", translated in all 5 `src/lang/*.json`.
 - README: Buy Me a Coffee badge added to the top badge row (the bottom one at the end of the README already existed; `.github/FUNDING.yml` already has `buy_me_a_coffee: j0p3s`).
-- Release: after the PR is squash-merged, 4.7.3 is published via Actions -> release on `main` with `prerelease=false` (assets: `.cmd` + `.sha256`). Check the release page to confirm it exists and is "latest".
+- Release: PR #27 squash-merged as `fe4085d`; **v4.7.3** published stable + latest on 2026-11-13 via Actions -> release (assets: `.cmd` + `.sha256`; `.cmd` digest `sha256:d18711031f94fa647054b6cb13e7123e7fba15d1840749378f3e325ab3ddf579`).
+- On 2026-11-13 the owner deleted **all older GitHub releases**; v4.7.3 is the only release left. No README/CHANGELOG link points to a deleted release (checked).
 - License: **GPL-3.0-or-later** since PR #25; versions up to 4.7.1 stay available under MIT.
 - `src/isohashes.py` was run for 4.7.3: no new hashes (152 in `iso-hashes.json`).
-- Not done, owner asked on 2026-11-13: "delete old releases" and "don't keep old commits". The GitHub MCP tools have no release/tag delete, and rewriting `main` history needs force-push, which repo rules block. Both need the owner to do it in GitHub (or to relax the rule) — see section 7.
+- **Commit history is kept on purpose** (owner, 2026-11-13): it is needed to trace bugs later. Never rewrite or squash `main`'s existing history.
 
 ## 3. Key decisions
 - Replies to the owner in **Portuguese**.
@@ -41,15 +42,13 @@
 - `docs/HANDOFF.md` — older committed copy, **stale** (stops at 4.4.0); this root file supersedes it.
 
 ## 6. Next steps
-1. Confirm the v4.7.3 release exists, is stable + latest, and has the `.cmd` + `.sha256`.
-2. If the owner deletes old releases/tags in GitHub, update the README version table / links that point to them only if they break (README line 5 points to v4.7.3).
+1. Wait for the owner's next request.
+2. If old tags still exist after the release cleanup, ask the owner before deleting them (they keep the history findable; release-note compare links use them).
 3. For any change, first: `git fetch origin main && git checkout -B ccr-0ebf53e0-gw0121 origin/main`, then `git merge -s ours origin/ccr-0ebf53e0-gw0121`.
 4. Before any release, run `python3 src/isohashes.py`. Stable release: bump version, CHANGELOG `## vX.Y.Z — date` starting `**Stable release.**`, README badge/start line/table, `bug_report.yml`; merge; run `release.yml` on `main` with `prerelease=false`.
 5. Optional: refresh or delete `docs/HANDOFF.md`; refresh `docs/screenshots/01-source.png` (ISO check, and now the coffee button).
 
 ## 7. Open questions / gotchas
-- **Delete old releases:** owner asked (2026-11-13). Must be done in GitHub (Releases -> each release -> Delete; tags under Tags) — no MCP tool for it. Ask whether tags go too and whether v4.7.2 stays.
-- **"Don't keep old commits":** unclear — squash-merge already keeps one commit per PR; erasing `main`'s history needs force-push (blocked) or a fresh repo. Ask the owner what they mean before doing anything.
 - The coffee button and its light-theme colour (`#FFC857` -> `#875600`) are not verified on Windows; check on the next manual run.
 - A full **Run everything** (slipstream + ISO build) on Windows hasn't been verified by logs in recent versions; only manual Windows runs cover DISM/WPF.
 - Never publish private data from user logs (user/PC/account names, paths, product keys, Wi-Fi names), `signing/`, or `*.pfx` files.
