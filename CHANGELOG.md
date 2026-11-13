@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.7.3 — 2026-11-13
+
+**Stable release.** Adds a Buy Me a Coffee button to the window's title bar. Everything else works exactly like 4.7.2; settings and work folders are kept. To upgrade, download the new `.cmd` and use it in place of the old one.
+
+### Added
+- A heart button next to the theme and accessibility buttons opens https://buymeacoffee.com/j0p3s in the browser, to support the project. Its tooltip is translated into all interface languages.
+
 ## v4.7.2 — 2026-11-10
 
 **Stable release.** Changes the project license from MIT to the GNU GPL v3 or later. The app works exactly like 4.7.1; settings and work folders are kept. To upgrade, download the new `.cmd` and use it in place of the old one.
