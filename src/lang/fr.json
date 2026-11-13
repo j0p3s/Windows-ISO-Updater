@@ -391,5 +391,6 @@
  "Unpack an ISO and tick editions to detect the language-pack source.": "Extrayez un ISO et cochez des éditions pour détecter la source des packs de langues.",
  "Detected language-pack source: build {0} / {1}": "Source de packs de langues détectée : build {0} / {1}",
  "Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.": "Les téléchargements automatiques sont indisponibles pour cette sélection. Importez un CAB compatible ou utilisez un lien direct Microsoft.",
- "Automatic language downloads: {0}": "Téléchargements automatiques de langues : {0}"
+ "Automatic language downloads: {0}": "Téléchargements automatiques de langues : {0}",
+ "Buy me a coffee - support this project": "Offrez-moi un café - soutenez ce projet"
 }

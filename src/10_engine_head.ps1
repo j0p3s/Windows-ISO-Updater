@@ -10,7 +10,7 @@ $ProgressPreference    = 'SilentlyContinue'
 
 $Script:AppName      = 'Windows-ISO-Updater'
 $Script:AppTitle     = 'Windows ISO Updater'
-$Script:AppVersion   = '4.7.2'
+$Script:AppVersion   = '4.7.3'
 $Script:Root         = Split-Path -Parent $env:W10U_SELF
 $ToolsDir            = Join-Path $Script:Root 'tools'
 $IsoPath             = $null
@@ -22,6 +22,7 @@ $Script:LegacySettingsFile = Join-Path $Script:Root 'Win10-ISO-Updater.settings.
 $Script:SignDir      = Join-Path $Script:Root 'signing'
 $Script:CertSubject  = 'CN=Custom Driver Signing'
 $Script:GeneratorUrl = 'https://github.com/j0p3s/autounattended-generator'
+$Script:CoffeeUrl = 'https://buymeacoffee.com/j0p3s'
 $Script:IsoPageUrl   = 'https://www.microsoft.com/software-download/windows10ISO'
 $Script:IsoPageUrl11 = 'https://www.microsoft.com/software-download/windows11'
 $Script:CatalogBase  = 'https://www.catalog.update.microsoft.com'

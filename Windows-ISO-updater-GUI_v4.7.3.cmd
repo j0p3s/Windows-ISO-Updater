@@ -1,6 +1,6 @@
 @echo off
 :: ===========================================================================
-::  Windows-ISO-updater-GUI_v4.7.2.cmd  -  one file, graphical interface
+::  Windows-ISO-updater-GUI_v4.7.3.cmd  -  one file, graphical interface
 ::  Windows ISO Updater: the file name carries the version (vX.X.X).
 ::  - unpacks a Windows 10 or Windows 11 ISO and detects its build
 ::  - downloads its updates from the Microsoft Update Catalog
@@ -29,7 +29,7 @@ exit /b
 
 :admin_ok
 set "W10U_SELF=%~f0"
-echo Starting Windows ISO Updater v4.7.2 ...  (this window hides when the program opens)
+echo Starting Windows ISO Updater v4.7.3 ...  (this window hides when the program opens)
 "%PSEXE%" -NoProfile -STA -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:W10U_SELF);$i=$t.IndexOf('#'+'PS-BEGIN');Invoke-Expression $t.Substring($i)"
 if errorlevel 1 pause
 exit /b
@@ -45,7 +45,7 @@ $ProgressPreference    = 'SilentlyContinue'
 
 $Script:AppName      = 'Windows-ISO-Updater'
 $Script:AppTitle     = 'Windows ISO Updater'
-$Script:AppVersion   = '4.7.2'
+$Script:AppVersion   = '4.7.3'
 $Script:Root         = Split-Path -Parent $env:W10U_SELF
 $ToolsDir            = Join-Path $Script:Root 'tools'
 $IsoPath             = $null
@@ -57,6 +57,7 @@ $Script:LegacySettingsFile = Join-Path $Script:Root 'Win10-ISO-Updater.settings.
 $Script:SignDir      = Join-Path $Script:Root 'signing'
 $Script:CertSubject  = 'CN=Custom Driver Signing'
 $Script:GeneratorUrl = 'https://github.com/j0p3s/autounattended-generator'
+$Script:CoffeeUrl = 'https://buymeacoffee.com/j0p3s'
 $Script:IsoPageUrl   = 'https://www.microsoft.com/software-download/windows10ISO'
 $Script:IsoPageUrl11 = 'https://www.microsoft.com/software-download/windows11'
 $Script:CatalogBase  = 'https://www.catalog.update.microsoft.com'
@@ -6034,11 +6035,12 @@ __RES__
           <TextBlock Text="W10" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.7.2" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
+          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.7.3" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
           <TextBlock Text="updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO" Foreground="#8A94A8" FontSize="11"/>
         </StackPanel>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0">
+        <Button x:Name="CoffeeBtn" Style="{StaticResource Chrome}" FontSize="14" Foreground="#FFC857" Content="&#xE00B;" ToolTip="Buy me a coffee - support this project" AutomationProperties.Name="Buy me a coffee - support this project"/>
         <Button x:Name="ThemeBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE706;" ToolTip="Light theme" AutomationProperties.Name="Switch to the light theme"/>
         <Button x:Name="A11yBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE776;" ToolTip="Display and accessibility: theme, text size, font" AutomationProperties.Name="Display and accessibility settings"/>
         <Border Width="1" Height="18" Background="#232B3D" Margin="6,0,6,0" VerticalAlignment="Center"/>
@@ -6757,6 +6759,7 @@ function Get-LangData([string]$Code) {
     switch ($Code) {
         'pt' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	atualiza&#xE7;&#xF5;es + controladores + mods NVIDIA assinados + autounattend + $OEM$  ->  ISO de arranque
+Buy me a coffee - support this project	Paga-me um caf&#xE9; - apoia este projeto
 Light theme	Tema claro
 Switch to the light theme	Mudar para o tema claro
 Display and accessibility: theme, text size, font	Visualiza&#xE7;&#xE3;o e acessibilidade: tema, tamanho do texto, tipo de letra
@@ -7152,6 +7155,7 @@ Id	ID
 '@ }
         'es' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	actualizaciones + controladores + mods NVIDIA firmados + autounattend + $OEM$  ->  ISO de arranque
+Buy me a coffee - support this project	Inv&#xED;tame a un caf&#xE9; - apoya este proyecto
 Light theme	Tema claro
 Switch to the light theme	Cambiar al tema claro
 Display and accessibility: theme, text size, font	Pantalla y accesibilidad: tema, tama&#xF1;o del texto, fuente
@@ -7547,6 +7551,7 @@ Id	ID
 '@ }
         'fr' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	mises &#xE0; jour + pilotes + mods NVIDIA sign&#xE9;s + autounattend + $OEM$  ->  ISO amor&#xE7;able
+Buy me a coffee - support this project	Offrez-moi un caf&#xE9; - soutenez ce projet
 Light theme	Th&#xE8;me clair
 Switch to the light theme	Passer au th&#xE8;me clair
 Display and accessibility: theme, text size, font	Affichage et accessibilit&#xE9; : th&#xE8;me, taille du texte, police
@@ -7942,6 +7947,7 @@ Id	ID
 '@ }
         'de' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	Updates + Treiber + signierte NVIDIA-Mods + autounattend + $OEM$  ->  bootf&#xE4;hige ISO
+Buy me a coffee - support this project	Spendier mir einen Kaffee - unterst&#xFC;tze dieses Projekt
 Light theme	Helles Design
 Switch to the light theme	Zum hellen Design wechseln
 Display and accessibility: theme, text size, font	Anzeige und Barrierefreiheit: Design, Textgr&#xF6;&#xDF;e, Schriftart
@@ -8337,6 +8343,7 @@ Id	ID
 '@ }
         'it' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	aggiornamenti + driver + mod NVIDIA firmati + autounattend + $OEM$  ->  ISO avviabile
+Buy me a coffee - support this project	Offrimi un caff&#xE8; - sostieni questo progetto
 Light theme	Tema chiaro
 Switch to the light theme	Passa al tema chiaro
 Display and accessibility: theme, text size, font	Schermo e accessibilit&#xE0;: tema, dimensione del testo, carattere
@@ -9653,6 +9660,7 @@ try {
     $U.MaxBtn.Add_Click({ Set-WorkAreaMax (-not $Script:FakeMax) })
     $U.CloseBtn.Add_Click({ $Script:W.Close() })
     # top right: theme switch, and the display / accessibility panel (theme, text size, font)
+    $U.CoffeeBtn.Add_Click({ Start-Process $Script:CoffeeUrl })
     $U.ThemeBtn.Add_Click({
         $Script:Cfg.UiTheme = if ($Script:ThemeNow -eq 'Light') { 'Dark' } else { 'Light' }
         Save-Settings; Set-Theme; Update-Ui

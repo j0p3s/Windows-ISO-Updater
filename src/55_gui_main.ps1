@@ -200,6 +200,7 @@ try {
     $U.MaxBtn.Add_Click({ Set-WorkAreaMax (-not $Script:FakeMax) })
     $U.CloseBtn.Add_Click({ $Script:W.Close() })
     # top right: theme switch, and the display / accessibility panel (theme, text size, font)
+    $U.CoffeeBtn.Add_Click({ Start-Process $Script:CoffeeUrl })
     $U.ThemeBtn.Add_Click({
         $Script:Cfg.UiTheme = if ($Script:ThemeNow -eq 'Light') { 'Dark' } else { 'Light' }
         Save-Settings; Set-Theme; Update-Ui
