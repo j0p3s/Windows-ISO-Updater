@@ -392,5 +392,6 @@
  "Detected language-pack source: build {0} / {1}": "Source de packs de langues détectée : build {0} / {1}",
  "Automatic downloads are unavailable for this selection. Import a matching CAB or use a direct Microsoft link.": "Les téléchargements automatiques sont indisponibles pour cette sélection. Importez un CAB compatible ou utilisez un lien direct Microsoft.",
  "Automatic language downloads: {0}": "Téléchargements automatiques de langues : {0}",
+ "Buy me a coffee": "Offrez-moi un café",
  "Buy me a coffee - support this project": "Offrez-moi un café - soutenez ce projet"
 }

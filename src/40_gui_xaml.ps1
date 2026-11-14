@@ -264,7 +264,7 @@ __RES__
         </StackPanel>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0">
-        <Button x:Name="CoffeeBtn" Style="{StaticResource Chrome}" FontSize="14" Foreground="#FFC857" Content="&#xE00B;" ToolTip="Buy me a coffee - support this project" AutomationProperties.Name="Buy me a coffee - support this project"/>
+        <Button x:Name="CoffeeBtn" Style="{StaticResource Btn}" Background="#FFDD00" Foreground="#1A1A1A" FontWeight="SemiBold" FontSize="12" Padding="12,0" Height="28" Margin="0,2,12,0" Content="Buy me a coffee" ToolTip="Buy me a coffee - support this project" AutomationProperties.Name="Buy me a coffee - support this project"/>
         <Button x:Name="ThemeBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE706;" ToolTip="Light theme" AutomationProperties.Name="Switch to the light theme"/>
         <Button x:Name="A11yBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE776;" ToolTip="Display and accessibility: theme, text size, font" AutomationProperties.Name="Display and accessibility settings"/>
         <Border Width="1" Height="18" Background="#232B3D" Margin="6,0,6,0" VerticalAlignment="Center"/>
