@@ -8863,6 +8863,7 @@ $Script:LightColors = @{
     '6F7A90' = '535D70'; '5B6478' = '5A6478'
     '3DDC97' = '0B7A47'; 'FFC857' = '875600'; 'FF5C7A' = 'BA1F3A'; '2F9BFF' = '1A64C2'; '5CC8FF' = '0A5F8A'; '3A8FB7' = '245E7A'
     'B48CFF' = '6B3FC4'; 'C9A043' = '7A5C0C'
+    'FFDD00' = 'FFDD00'; '1A1A1A' = '1A1A1A'     # the yellow Buy me a coffee button keeps its own colours in both themes
 }
 function ConvertTo-ThemedXaml([string]$X) {
     $p = $Script:ThemeProps
