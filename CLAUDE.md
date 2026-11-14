@@ -51,4 +51,4 @@ A suite fails if any line starts with `FAIL `. New suites must be added to the `
 
 - GitHub repo is `j0p3s/Windows-ISO-Updater` (the GitHub tooling may still use the old name `Win10-ISO-Updater`). Force-push is blocked on branches.
 - Never commit or publish: `signing/`, `*.pfx`/`*.p12`, settings JSON, ISOs/WIMs, real answer files, or private data from user logs (user/PC/account names, paths, product keys, Wi-Fi names). Scrub logs before quoting them in issues/PRs.
-- The repo owner prefers replies in Portuguese. Session handoff notes go in `HANDOFF.md` at the root (committed; `docs/HANDOFF.md` is an older copy).
+- The repo owner prefers replies in Portuguese. Session handoff notes go in `HANDOFF.md` at the root (committed).
