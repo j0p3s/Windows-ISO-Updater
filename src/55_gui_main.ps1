@@ -245,6 +245,8 @@ try {
     $W.Add_StateChanged({
         if ($Script:W.WindowState -eq 'Maximized') { $Script:W.WindowState = 'Normal'; Set-WorkAreaMax (-not $Script:FakeMax) }
     })
+    # start maximized (to the work area; needs the window handle, so wait until it is loaded)
+    $W.Add_Loaded({ if (-not $Script:FakeMax) { Set-WorkAreaMax $true } })
     # never start taller / wider than the screen minus the taskbar
     $wa = [System.Windows.SystemParameters]::WorkArea
     if ($W.Height -gt $wa.Height - 16) { $W.Height = [math]::Max(600, $wa.Height - 16) }

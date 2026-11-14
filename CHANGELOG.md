@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.7.4 — 2026-11-14
+
+**Stable release.** The Buy Me a Coffee button in the title bar is now a proper text button, and the window starts maximized. Everything else works exactly like 4.7.3; settings and work folders are kept. To upgrade, download the new `.cmd` and use it in place of the old one.
+
+### Changed
+- The heart icon is replaced by a yellow "Buy me a coffee" button (translated into all interface languages); it still opens https://buymeacoffee.com/j0p3s.
+- The window opens maximized to the work area (the taskbar stays visible). The maximize / restore button still switches back to the previous size.
+
 ## v4.7.3 — 2026-11-13
 
 **Stable release.** Adds a Buy Me a Coffee button to the window's title bar. Everything else works exactly like 4.7.2; settings and work folders are kept. To upgrade, download the new `.cmd` and use it in place of the old one.

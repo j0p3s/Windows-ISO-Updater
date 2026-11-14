@@ -1,6 +1,6 @@
 @echo off
 :: ===========================================================================
-::  Windows-ISO-updater-GUI_v4.7.3.cmd  -  one file, graphical interface
+::  Windows-ISO-updater-GUI_v4.7.4.cmd  -  one file, graphical interface
 ::  Windows ISO Updater: the file name carries the version (vX.X.X).
 ::  - unpacks a Windows 10 or Windows 11 ISO and detects its build
 ::  - downloads its updates from the Microsoft Update Catalog
@@ -29,7 +29,7 @@ exit /b
 
 :admin_ok
 set "W10U_SELF=%~f0"
-echo Starting Windows ISO Updater v4.7.3 ...  (this window hides when the program opens)
+echo Starting Windows ISO Updater v4.7.4 ...  (this window hides when the program opens)
 "%PSEXE%" -NoProfile -STA -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:W10U_SELF);$i=$t.IndexOf('#'+'PS-BEGIN');Invoke-Expression $t.Substring($i)"
 if errorlevel 1 pause
 exit /b
@@ -45,7 +45,7 @@ $ProgressPreference    = 'SilentlyContinue'
 
 $Script:AppName      = 'Windows-ISO-Updater'
 $Script:AppTitle     = 'Windows ISO Updater'
-$Script:AppVersion   = '4.7.3'
+$Script:AppVersion   = '4.7.4'
 $Script:Root         = Split-Path -Parent $env:W10U_SELF
 $ToolsDir            = Join-Path $Script:Root 'tools'
 $IsoPath             = $null
@@ -6035,12 +6035,12 @@ __RES__
           <TextBlock Text="W10" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.7.3" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
+          <TextBlock FontSize="15" FontWeight="SemiBold"><Run Text="Windows ISO Updater"/><Run x:Name="VerRun" Text="  v4.7.4" Foreground="#5B6478" FontWeight="Normal" FontSize="12"/></TextBlock>
           <TextBlock Text="updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO" Foreground="#8A94A8" FontSize="11"/>
         </StackPanel>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0">
-        <Button x:Name="CoffeeBtn" Style="{StaticResource Chrome}" FontSize="14" Foreground="#FFC857" Content="&#xE00B;" ToolTip="Buy me a coffee - support this project" AutomationProperties.Name="Buy me a coffee - support this project"/>
+        <Button x:Name="CoffeeBtn" Style="{StaticResource Btn}" Background="#FFDD00" Foreground="#1A1A1A" FontWeight="SemiBold" FontSize="12" Padding="12,0" Height="28" Margin="0,2,12,0" Content="Buy me a coffee" ToolTip="Buy me a coffee - support this project" AutomationProperties.Name="Buy me a coffee - support this project"/>
         <Button x:Name="ThemeBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE706;" ToolTip="Light theme" AutomationProperties.Name="Switch to the light theme"/>
         <Button x:Name="A11yBtn" Style="{StaticResource Chrome}" FontSize="14" Content="&#xE776;" ToolTip="Display and accessibility: theme, text size, font" AutomationProperties.Name="Display and accessibility settings"/>
         <Border Width="1" Height="18" Background="#232B3D" Margin="6,0,6,0" VerticalAlignment="Center"/>
@@ -6759,6 +6759,7 @@ function Get-LangData([string]$Code) {
     switch ($Code) {
         'pt' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	atualiza&#xE7;&#xF5;es + controladores + mods NVIDIA assinados + autounattend + $OEM$  ->  ISO de arranque
+Buy me a coffee	Paga-me um caf&#xE9;
 Buy me a coffee - support this project	Paga-me um caf&#xE9; - apoia este projeto
 Light theme	Tema claro
 Switch to the light theme	Mudar para o tema claro
@@ -7155,6 +7156,7 @@ Id	ID
 '@ }
         'es' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	actualizaciones + controladores + mods NVIDIA firmados + autounattend + $OEM$  ->  ISO de arranque
+Buy me a coffee	Inv&#xED;tame a un caf&#xE9;
 Buy me a coffee - support this project	Inv&#xED;tame a un caf&#xE9; - apoya este proyecto
 Light theme	Tema claro
 Switch to the light theme	Cambiar al tema claro
@@ -7551,6 +7553,7 @@ Id	ID
 '@ }
         'fr' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	mises &#xE0; jour + pilotes + mods NVIDIA sign&#xE9;s + autounattend + $OEM$  ->  ISO amor&#xE7;able
+Buy me a coffee	Offrez-moi un caf&#xE9;
 Buy me a coffee - support this project	Offrez-moi un caf&#xE9; - soutenez ce projet
 Light theme	Th&#xE8;me clair
 Switch to the light theme	Passer au th&#xE8;me clair
@@ -7947,6 +7950,7 @@ Id	ID
 '@ }
         'de' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	Updates + Treiber + signierte NVIDIA-Mods + autounattend + $OEM$  ->  bootf&#xE4;hige ISO
+Buy me a coffee	Spendier mir einen Kaffee
 Buy me a coffee - support this project	Spendier mir einen Kaffee - unterst&#xFC;tze dieses Projekt
 Light theme	Helles Design
 Switch to the light theme	Zum hellen Design wechseln
@@ -8343,6 +8347,7 @@ Id	ID
 '@ }
         'it' { return @'
 updates + drivers + signed NVIDIA mods + autounattend + $OEM$  ->  bootable ISO	aggiornamenti + driver + mod NVIDIA firmati + autounattend + $OEM$  ->  ISO avviabile
+Buy me a coffee	Offrimi un caff&#xE8;
 Buy me a coffee - support this project	Offrimi un caff&#xE8; - sostieni questo progetto
 Light theme	Tema chiaro
 Switch to the light theme	Passa al tema chiaro
@@ -8858,6 +8863,7 @@ $Script:LightColors = @{
     '6F7A90' = '535D70'; '5B6478' = '5A6478'
     '3DDC97' = '0B7A47'; 'FFC857' = '875600'; 'FF5C7A' = 'BA1F3A'; '2F9BFF' = '1A64C2'; '5CC8FF' = '0A5F8A'; '3A8FB7' = '245E7A'
     'B48CFF' = '6B3FC4'; 'C9A043' = '7A5C0C'
+    'FFDD00' = 'FFDD00'; '1A1A1A' = '1A1A1A'     # the yellow Buy me a coffee button keeps its own colours in both themes
 }
 function ConvertTo-ThemedXaml([string]$X) {
     $p = $Script:ThemeProps
@@ -9705,6 +9711,8 @@ try {
     $W.Add_StateChanged({
         if ($Script:W.WindowState -eq 'Maximized') { $Script:W.WindowState = 'Normal'; Set-WorkAreaMax (-not $Script:FakeMax) }
     })
+    # start maximized (to the work area; needs the window handle, so wait until it is loaded)
+    $W.Add_Loaded({ if (-not $Script:FakeMax) { Set-WorkAreaMax $true } })
     # never start taller / wider than the screen minus the taskbar
     $wa = [System.Windows.SystemParameters]::WorkArea
     if ($W.Height -gt $wa.Height - 16) { $W.Height = [math]::Max(600, $wa.Height - 16) }
