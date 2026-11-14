@@ -6,7 +6,7 @@
 ## 2. Current status
 - App version **4.7.4** (stable, 2026-11-14): the title-bar coffee control (`CoffeeBtn`) is now a yellow (`#FFDD00`, dark text) text button "Buy me a coffee" using the `Btn` style, opening `$Script:CoffeeUrl` = `https://buymeacoffee.com/j0p3s` (`src/10_engine_head.ps1`; click handler in `src/55_gui_main.ps1`). Yellow is `#FFDD00`, not `#FFC857`, so the light-theme colour remap in `src/50_gui.ps1` does not touch it. New text "Buy me a coffee" translated in all 5 `src/lang/*.json`.
 - The window starts maximized: `$W.Add_Loaded({ Set-WorkAreaMax $true })` in `src/55_gui_main.ps1` (manual work-area maximize; a real WPF Maximized would cover the taskbar).
-- Release flow for 4.7.4: PR #29 (bump + docs + code) squash-merged, then Actions -> release on `main`. Check `get_latest_release` for the final state.
+- **v4.7.4 published** stable + latest on 2026-11-14: PR #29 squash-merged as `1408030`, then Actions -> release on `main` (`prerelease=false`). Assets: `.cmd` + `.sha256`; `.cmd` digest `sha256:b68ea469f52d58c0545d993f0a00683d0ebe74a740db0c7843c7840a3350b591`. Only v4.7.3 and v4.7.4 exist as releases.
 - Earlier: 4.7.3 added the heart icon button; on 2026-11-13 the owner deleted all older GitHub releases. README/CHANGELOG link to no deleted release.
 - License: **GPL-3.0-or-later** since PR #25; versions up to 4.7.1 stay available under MIT.
 - `src/isohashes.py` run for 4.7.4: no new hashes (152 in `iso-hashes.json`).
@@ -25,6 +25,8 @@
 - Force-push to the branch → rejected by repo rules (use the `-s ours` merge above).
 - `curl` to api.github.com from the container → "GitHub access to this repository is not enabled"; use the `mcp__github__*` tools (check runs, `actions_list`, `actions_run_trigger`, `get_release_by_tag`).
 - The `release` workflow attaches only the `.cmd` + `.sha256`; the ZIP bundles come only from `promote-release`. Don't link a release ZIP in the README for a direct stable release.
+- Local test runs: `run-tests.ps1` prints failures as indented `  FAIL ...` lines, so `grep "^FAIL "` misses them. Use `grep -E "^\s*FAIL|^FAILED"` (4.7.4's first CI run failed on `theme.tests.ps1` while a wrong local grep showed 0).
+- New colours in XAML or `New-Brush` need an entry in `$Script:LightColors` (`src/50_gui.ps1`), or `theme.tests.ps1` fails; the coffee button maps `FFDD00`/`1A1A1A` to themselves.
 - Older: `@()` around a `New-Object List[object]` broke startup on Windows (4.2.0/4.3.0) while tests passed — tests on PS7 don't catch PS5.1 issues.
 - Older (4.7.0): forcing HTTP language-pack URLs to HTTPS → `SEC_E_WRONG_PRINCIPAL`; keep the URL from UUP metadata as-is.
 
